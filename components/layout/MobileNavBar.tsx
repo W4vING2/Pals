@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { Home, Search, PlusCircle, MessageCircle, User } from "lucide-react";
-import { useAuthStore, useNotificationStore, useCreatePostStore } from "@/lib/store";
+import { useAuthStore, useNotificationStore, useUnreadMessagesStore, useCreatePostStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -30,6 +30,7 @@ export function MobileNavBar() {
   const pathname = usePathname();
   const profile = useAuthStore((s) => s.profile);
   const unreadCount = useNotificationStore((s) => s.unreadCount);
+  const unreadMessages = useUnreadMessagesStore((s) => s.unreadMessagesCount);
   const openCreatePost = useCreatePostStore((s) => s.setOpen);
 
   function isActive(href: string, isDynamic?: boolean) {
@@ -116,14 +117,14 @@ export function MobileNavBar() {
                     )}
                     strokeWidth={active ? 2.4 : 1.8}
                   />
-                  {item.label === "Messages" && unreadCount > 0 && (
+                  {item.label === "Messages" && unreadMessages > 0 && (
                     <motion.span
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
                       transition={{ type: "spring", stiffness: 500, damping: 20 }}
                       className="absolute -right-2 -top-1.5 flex h-4.5 min-w-[18px] items-center justify-center rounded-full bg-[var(--destructive)] px-1 text-[10px] font-bold text-white"
                     >
-                      {unreadCount > 99 ? "99+" : unreadCount}
+                      {unreadMessages > 99 ? "99+" : unreadMessages}
                     </motion.span>
                   )}
                 </motion.div>

@@ -208,10 +208,8 @@ export default function FeedPage() {
   return (
     <PageTransition>
       <div className="max-w-2xl mx-auto px-4 py-6">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold font-display text-[var(--text-primary)]">Feed</h1>
-          {/* Desktop create button */}
+        {/* Desktop create button */}
+        <div className="flex items-center justify-end mb-6">
           <Button
             onClick={() => setCreateOpen(true)}
             size="sm"

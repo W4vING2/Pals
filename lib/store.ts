@@ -52,6 +52,8 @@ export const useThemeStore = create<ThemeState>((set) => ({
 
 // ── Call Store ─────────────────────────────────────────────
 
+export type CallStatus = "ringing" | "connected";
+
 export type CallInfo = {
   callerId: string;
   callerProfile: Profile | null;
@@ -65,17 +67,21 @@ export type CallInfo = {
 type CallState = {
   incomingCall: CallInfo | null;
   activeCall: CallInfo | null;
+  callStatus: CallStatus | null;
   setIncomingCall: (call: CallInfo | null) => void;
-  setActiveCall: (call: CallInfo | null) => void;
+  setActiveCall: (call: CallInfo | null, status?: CallStatus) => void;
+  setCallStatus: (status: CallStatus | null) => void;
   endCall: () => void;
 };
 
 export const useCallStore = create<CallState>((set) => ({
   incomingCall: null,
   activeCall: null,
+  callStatus: null,
   setIncomingCall: (call) => set({ incomingCall: call }),
-  setActiveCall: (call) => set({ activeCall: call }),
-  endCall: () => set({ incomingCall: null, activeCall: null }),
+  setActiveCall: (call, status) => set({ activeCall: call, callStatus: status ?? "connected" }),
+  setCallStatus: (callStatus) => set({ callStatus }),
+  endCall: () => set({ incomingCall: null, activeCall: null, callStatus: null }),
 }));
 
 // ── Create Post Store ─────────────────────────────────────
@@ -100,6 +106,21 @@ type MessagesStoreState = {
 export const useMessagesStore = create<MessagesStoreState>((set) => ({
   pendingConversationId: null,
   setPendingConversationId: (id) => set({ pendingConversationId: id }),
+}));
+
+// ── Unread Messages Store ─────────────────────────────────
+
+type UnreadMessagesState = {
+  unreadMessagesCount: number;
+  setUnreadMessagesCount: (n: number) => void;
+  incrementUnreadMessages: () => void;
+};
+
+export const useUnreadMessagesStore = create<UnreadMessagesState>((set) => ({
+  unreadMessagesCount: 0,
+  setUnreadMessagesCount: (n) => set({ unreadMessagesCount: n }),
+  incrementUnreadMessages: () =>
+    set((s) => ({ unreadMessagesCount: s.unreadMessagesCount + 1 })),
 }));
 
 // ── Notification Store ─────────────────────────────────────

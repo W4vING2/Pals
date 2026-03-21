@@ -125,16 +125,6 @@ export default function MessagesPage() {
             mobileView === "chat" ? "hidden" : "block"
           )}
         >
-          <div className="flex items-center justify-between px-4 py-4 border-b border-[var(--border)] lg:hidden">
-            <h1 className="text-lg font-bold text-[var(--text-primary)]">
-              Messages
-            </h1>
-          </div>
-          <div className="hidden lg:flex items-center px-4 py-4 border-b border-[var(--border)]">
-            <h1 className="text-lg font-bold text-[var(--text-primary)]">
-              Messages
-            </h1>
-          </div>
 
           <div className="h-[calc(100%-64px)] overflow-hidden">
             <ConversationList

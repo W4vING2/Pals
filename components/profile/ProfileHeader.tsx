@@ -14,6 +14,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { AnimatedCounter } from "@/components/shared/AnimatedCounter";
+import { OnlineIndicator } from "@/components/shared/OnlineIndicator";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { useAuthStore } from "@/lib/store";
 import { useRouter } from "next/navigation";
@@ -145,27 +146,41 @@ export function ProfileHeader({
     setFollowPending(false);
   };
 
+  const uploadToStorage = async (
+    folder: string,
+    file: File
+  ): Promise<string | null> => {
+    if (!user) return null;
+    const supabase = getSupabaseBrowserClient();
+    const ext = file.name.split(".").pop();
+    const path = `${folder}/${user.id}.${ext}`;
+
+    // Remove old file first (ignore errors if it doesn't exist)
+    await supabase.storage.from("media").remove([path]);
+
+    const { error: uploadErr } = await supabase.storage
+      .from("media")
+      .upload(path, file);
+    if (uploadErr) {
+      console.error(`${folder} upload error:`, uploadErr);
+      return null;
+    }
+    const { data } = supabase.storage.from("media").getPublicUrl(path);
+    return `${data.publicUrl}?t=${Date.now()}`;
+  };
+
   const handleAvatarUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
     setUploadingAvatar(true);
-    const supabase = getSupabaseBrowserClient();
-    const ext = file.name.split(".").pop();
-    const path = `avatars/${user.id}.${ext}`;
-
-    const { error: uploadErr } = await supabase.storage
-      .from("media")
-      .upload(path, file, { upsert: true });
-    if (uploadErr) {
-      console.error("Avatar upload error:", uploadErr);
+    const url = await uploadToStorage("avatars", file);
+    if (!url) {
       setUploadingAvatar(false);
       return;
     }
-    const { data } = supabase.storage.from("media").getPublicUrl(path);
-    // Cache-bust: append timestamp so browser fetches the new image
-    const url = `${data.publicUrl}?t=${Date.now()}`;
+    const supabase = getSupabaseBrowserClient();
     const { data: updated } = await supabase
       .from("profiles")
       .update({ avatar_url: url })
@@ -185,20 +200,12 @@ export function ProfileHeader({
     const file = e.target.files?.[0];
     if (!file || !user) return;
     setUploadingCover(true);
-    const supabase = getSupabaseBrowserClient();
-    const ext = file.name.split(".").pop();
-    const path = `covers/${user.id}.${ext}`;
-
-    const { error: uploadErr } = await supabase.storage
-      .from("media")
-      .upload(path, file, { upsert: true });
-    if (uploadErr) {
-      console.error("Cover upload error:", uploadErr);
+    const url = await uploadToStorage("covers", file);
+    if (!url) {
       setUploadingCover(false);
       return;
     }
-    const { data } = supabase.storage.from("media").getPublicUrl(path);
-    const url = `${data.publicUrl}?t=${Date.now()}`;
+    const supabase = getSupabaseBrowserClient();
     const { data: updated } = await supabase
       .from("profiles")
       .update({ cover_url: url })
@@ -301,7 +308,7 @@ export function ProfileHeader({
               </Avatar>
             </div>
 
-            {isOwnProfile && (
+            {isOwnProfile ? (
               <button
                 onClick={() => avatarInputRef.current?.click()}
                 disabled={uploadingAvatar}
@@ -310,6 +317,12 @@ export function ProfileHeader({
               >
                 <Camera className="size-3.5" />
               </button>
+            ) : (
+              <OnlineIndicator
+                isOnline={profile.is_online}
+                size="lg"
+                className="z-10 ring-[var(--bg-base)]"
+              />
             )}
             <input
               ref={avatarInputRef}

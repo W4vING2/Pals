@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
+import { OnlineIndicator } from "@/components/shared/OnlineIndicator";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/store";
 import type { ConversationWithDetails } from "@/hooks/useMessages";
@@ -160,22 +161,30 @@ export function ChatWindow({
     <div className="flex flex-col h-full">
       {/* Header */}
       {conversation && <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] bg-[var(--bg-surface)]">
-        {chatAvatarUrl ? (
-          <img
-            src={chatAvatarUrl}
-            alt={chatName}
-            className="w-9 h-9 rounded-full object-cover shrink-0"
-          />
-        ) : (
-          <div className={cn(
-            "w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0",
-            isGroup
-              ? "bg-gradient-to-br from-purple-600 to-indigo-500"
-              : "bg-gradient-to-br from-purple-500 to-emerald-500"
-          )}>
-            {isGroup ? <Users className="size-4" /> : chatName[0]?.toUpperCase()}
-          </div>
-        )}
+        <div className="relative shrink-0">
+          {chatAvatarUrl ? (
+            <img
+              src={chatAvatarUrl}
+              alt={chatName}
+              className="w-9 h-9 rounded-full object-cover"
+            />
+          ) : (
+            <div className={cn(
+              "w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-semibold",
+              isGroup
+                ? "bg-gradient-to-br from-purple-600 to-indigo-500"
+                : "bg-gradient-to-br from-purple-500 to-emerald-500"
+            )}>
+              {isGroup ? <Users className="size-4" /> : chatName[0]?.toUpperCase()}
+            </div>
+          )}
+          {!isGroup && (
+            <OnlineIndicator
+              isOnline={otherProfile?.is_online ?? false}
+              size="sm"
+            />
+          )}
+        </div>
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sm text-[var(--text-primary)] truncate">
             {chatName}
@@ -184,11 +193,15 @@ export function ChatWindow({
             <p className="text-xs text-[var(--text-secondary)]">
               {conversation.participants.length} members
             </p>
-          ) : otherProfile?.username ? (
+          ) : (
             <p className="text-xs text-[var(--text-secondary)]">
-              @{otherProfile.username}
+              {otherProfile?.is_online ? (
+                <span className="text-emerald-500">Online</span>
+              ) : otherProfile?.username ? (
+                <>@{otherProfile.username}</>
+              ) : null}
             </p>
-          ) : null}
+          )}
         </div>
 
         <div className="flex items-center gap-1">

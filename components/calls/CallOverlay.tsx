@@ -18,7 +18,7 @@ function formatDuration(seconds: number): string {
 }
 
 export function CallOverlay() {
-  const { activeCall } = useCallStore();
+  const { activeCall, callStatus } = useCallStore();
   const { profile } = useAuthStore();
   const { hangup } = useCalls();
 
@@ -36,6 +36,9 @@ export function CallOverlay() {
   const remote = activeCall?.remoteProfile;
   const remoteName =
     remote?.display_name ?? remote?.username ?? "Unknown";
+
+  const isRinging = callStatus === "ringing";
+  const isConnected = callStatus === "connected";
 
   useEffect(() => {
     if (!activeCall) return;
@@ -56,16 +59,24 @@ export function CallOverlay() {
       }
     };
 
-    // Start duration timer
+    return () => {
+      manager.onStream = null;
+    };
+  }, [activeCall]);
+
+  // Only start timer when connected
+  useEffect(() => {
+    if (!isConnected) return;
+
+    setDuration(0);
     timerRef.current = setInterval(() => {
       setDuration((d) => d + 1);
     }, 1000);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
-      manager.onStream = null;
     };
-  }, [activeCall]);
+  }, [isConnected]);
 
   if (!activeCall) return null;
 
@@ -83,6 +94,13 @@ export function CallOverlay() {
     setCameraOn((c) => !c);
   };
 
+  // Status text
+  const statusText = isRinging
+    ? "Calling..."
+    : isConnected
+    ? formatDuration(duration)
+    : "Connecting...";
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
@@ -91,8 +109,8 @@ export function CallOverlay() {
       transition={{ duration: 0.25 }}
       className="fixed inset-0 z-[100] bg-[var(--bg-base)]"
     >
-      {isVideo ? (
-        /* -- Video call -- */
+      {isVideo && !isRinging ? (
+        /* -- Video call (connected or connecting) -- */
         <>
           {/* Remote video (full screen) */}
           {remoteStream ? (
@@ -119,7 +137,7 @@ export function CallOverlay() {
                 {remoteName}
               </p>
               <p className="text-sm text-[var(--text-secondary)]">
-                Connecting...
+                {statusText}
               </p>
             </div>
           )}
@@ -162,15 +180,30 @@ export function CallOverlay() {
           {/* Duration */}
           <div className="absolute top-6 left-1/2 -translate-x-1/2 bg-black/40 backdrop-blur-xl px-4 py-1.5 rounded-full">
             <p className="text-sm font-mono text-[var(--text-primary)]">
-              {formatDuration(duration)}
+              {statusText}
             </p>
           </div>
         </>
       ) : (
-        /* -- Voice call -- */
+        /* -- Voice call OR ringing state (video too) -- */
         <div className="w-full h-full flex flex-col items-center justify-center gap-6 bg-gradient-to-b from-[var(--accent-blue)]/10 to-[var(--bg-base)]">
           <div className="relative">
-            <span className="absolute inset-0 rounded-full bg-[var(--accent-blue)]/20 animate-ping scale-110" />
+            {isRinging ? (
+              <motion.span
+                animate={{
+                  scale: [1, 1.4, 1],
+                  opacity: [0.4, 0, 0.4],
+                }}
+                transition={{
+                  duration: 1.5,
+                  repeat: Infinity,
+                  ease: "easeOut",
+                }}
+                className="absolute inset-0 rounded-full bg-[var(--accent-mint)]/30"
+              />
+            ) : (
+              <span className="absolute inset-0 rounded-full bg-[var(--accent-blue)]/20 animate-ping scale-110" />
+            )}
             {remote?.avatar_url ? (
               <img
                 src={remote.avatar_url}
@@ -188,7 +221,7 @@ export function CallOverlay() {
               {remoteName}
             </p>
             <p className="text-sm text-[var(--text-secondary)] mt-1">
-              {formatDuration(duration)}
+              {statusText}
             </p>
           </div>
         </div>
@@ -197,25 +230,27 @@ export function CallOverlay() {
       {/* Control bar */}
       <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-4">
         {/* Mute */}
-        <button
-          onClick={toggleMute}
-          className={cn(
-            "w-14 h-14 rounded-full flex items-center justify-center transition-all duration-150 active:scale-95 backdrop-blur-xl",
-            muted
-              ? "bg-white/10 text-red-400"
-              : "bg-white/10 text-[var(--text-primary)] hover:bg-white/20"
-          )}
-          aria-label={muted ? "Unmute" : "Mute"}
-        >
-          {muted ? (
-            <MicOff className="w-6 h-6" />
-          ) : (
-            <Mic className="w-6 h-6" />
-          )}
-        </button>
+        {!isRinging && (
+          <button
+            onClick={toggleMute}
+            className={cn(
+              "w-14 h-14 rounded-full flex items-center justify-center transition-all duration-150 active:scale-95 backdrop-blur-xl",
+              muted
+                ? "bg-white/10 text-red-400"
+                : "bg-white/10 text-[var(--text-primary)] hover:bg-white/20"
+            )}
+            aria-label={muted ? "Unmute" : "Mute"}
+          >
+            {muted ? (
+              <MicOff className="w-6 h-6" />
+            ) : (
+              <Mic className="w-6 h-6" />
+            )}
+          </button>
+        )}
 
-        {/* Camera toggle (video call only) */}
-        {isVideo && (
+        {/* Camera toggle (video call only, not while ringing) */}
+        {isVideo && !isRinging && (
           <button
             onClick={toggleCamera}
             className={cn(

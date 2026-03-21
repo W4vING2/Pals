@@ -25,6 +25,9 @@ create table if not exists public.profiles (
   updated_at        timestamptz not null default now()
 );
 
+create index if not exists idx_profiles_is_online
+  on public.profiles(is_online) where is_online = true;
+
 alter table public.profiles enable row level security;
 
 create policy "Profiles are viewable by everyone"
@@ -230,9 +233,6 @@ create table if not exists public.conversations (
 
 alter table public.conversations enable row level security;
 
--- NOTE: RLS policies for conversations that reference conversation_participants
--- are added below, after conversation_participants table is created.
-
 create policy "Authenticated users can create conversations"
   on public.conversations for insert with check (auth.uid() is not null);
 
@@ -262,24 +262,27 @@ create policy "Authenticated users can join conversations"
 create policy "Users can update own participation"
   on public.conversation_participants for update using (user_id = auth.uid());
 
--- RLS policies for conversations (added here because they reference conversation_participants)
+-- ── Helper: get current user's conversation IDs (security definer) ──
+create or replace function public.get_my_conversation_ids()
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select conversation_id
+  from public.conversation_participants
+  where user_id = auth.uid();
+$$;
+
+-- RLS policies for conversations (use get_my_conversation_ids for performance)
 create policy "Participants can view conversations"
   on public.conversations for select
-  using (
-    exists (
-      select 1 from public.conversation_participants cp
-      where cp.conversation_id = id and cp.user_id = auth.uid()
-    )
-  );
+  using (id in (select get_my_conversation_ids()));
 
 create policy "Participants can update conversations"
   on public.conversations for update
-  using (
-    exists (
-      select 1 from public.conversation_participants cp
-      where cp.conversation_id = id and cp.user_id = auth.uid()
-    )
-  );
+  using (id in (select get_my_conversation_ids()));
 
 -- ── messages ──────────────────────────────────────────────────
 create table if not exists public.messages (
@@ -299,31 +302,18 @@ alter table public.messages enable row level security;
 
 create policy "Participants can view messages"
   on public.messages for select
-  using (
-    exists (
-      select 1 from public.conversation_participants cp
-      where cp.conversation_id = messages.conversation_id and cp.user_id = auth.uid()
-    )
-  );
+  using (conversation_id in (select get_my_conversation_ids()));
 
 create policy "Participants can send messages"
   on public.messages for insert
   with check (
-    auth.uid() = sender_id and
-    exists (
-      select 1 from public.conversation_participants cp
-      where cp.conversation_id = conversation_id and cp.user_id = auth.uid()
-    )
+    auth.uid() = sender_id
+    and conversation_id in (select get_my_conversation_ids())
   );
 
 create policy "Participants can update messages"
   on public.messages for update
-  using (
-    exists (
-      select 1 from public.conversation_participants cp
-      where cp.conversation_id = messages.conversation_id and cp.user_id = auth.uid()
-    )
-  );
+  using (conversation_id in (select get_my_conversation_ids()));
 
 -- Helper function: increment unread counts for all participants except sender
 create or replace function increment_unread_counts(
@@ -387,12 +377,33 @@ create policy "Participants can view call signals"
 create policy "Authenticated users can send call signals"
   on public.call_signals for insert with check (auth.uid() = caller_id);
 
+-- Auto-cleanup: delete stale call signals (older than 5 min) on each insert
+create or replace function public.cleanup_old_call_signals()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.call_signals
+  where created_at < now() - interval '5 minutes';
+  return new;
+end;
+$$;
+
+create trigger trg_cleanup_call_signals
+before insert on public.call_signals
+for each row execute function cleanup_old_call_signals();
+
 -- ── Realtime: enable tables ───────────────────────────────────
--- Run these in Supabase dashboard or via CLI:
--- alter publication supabase_realtime add table public.posts;
--- alter publication supabase_realtime add table public.messages;
--- alter publication supabase_realtime add table public.notifications;
--- alter publication supabase_realtime add table public.call_signals;
+alter publication supabase_realtime add table public.posts;
+alter publication supabase_realtime add table public.messages;
+alter publication supabase_realtime add table public.notifications;
+alter publication supabase_realtime add table public.call_signals;
+alter publication supabase_realtime add table public.likes;
+alter publication supabase_realtime add table public.comments;
+alter publication supabase_realtime add table public.conversations;
+alter publication supabase_realtime add table public.conversation_participants;
 
 -- ── Storage buckets ───────────────────────────────────────────
 -- Create a "media" bucket in Supabase Storage with public access

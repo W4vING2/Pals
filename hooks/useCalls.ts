@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { useAuthStore, useCallStore } from "@/lib/store";
 import { getWebRTCManager } from "@/lib/webrtc";
@@ -9,7 +9,19 @@ import type { Profile } from "@/lib/supabase";
 
 export function useCalls() {
   const { user } = useAuthStore();
-  const { incomingCall, activeCall, setIncomingCall, setActiveCall, endCall } = useCallStore();
+  const {
+    incomingCall,
+    activeCall,
+    callStatus,
+    setIncomingCall,
+    setActiveCall,
+    setCallStatus,
+    endCall,
+  } = useCallStore();
+
+  // Use ref to avoid stale closure for activeCall
+  const activeCallRef = useRef(activeCall);
+  activeCallRef.current = activeCall;
 
   // Listen for incoming call signals
   useEffect(() => {
@@ -54,7 +66,7 @@ export function useCalls() {
               type: signal.call_type,
               signal: signal.signal,
             });
-          } else if (signal.type === "answer" && activeCall) {
+          } else if (signal.type === "answer" && activeCallRef.current) {
             // Feed answer signal to our peer
             const manager = getWebRTCManager();
             manager.feedSignal(signal.signal);
@@ -73,7 +85,8 @@ export function useCalls() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, activeCall, setIncomingCall, endCall]);
+    // Intentionally only depend on user — activeCall is accessed via ref
+  }, [user, setIncomingCall, endCall]);
 
   const initiateCall = useCallback(
     async (
@@ -99,14 +112,23 @@ export function useCalls() {
           callType
         );
 
-        setActiveCall({
-          callerId: user.id,
-          callerProfile: null,
-          remoteUserId,
-          remoteProfile: remoteProfile as Profile | null,
-          conversationId,
-          type: callType,
-        });
+        // Set active call with "ringing" status — waiting for callee to accept
+        setActiveCall(
+          {
+            callerId: user.id,
+            callerProfile: null,
+            remoteUserId,
+            remoteProfile: remoteProfile as Profile | null,
+            conversationId,
+            type: callType,
+          },
+          "ringing"
+        );
+
+        // Listen for peer connection to mark as connected
+        manager.onConnected = () => {
+          setCallStatus("connected");
+        };
 
         return localStream;
       } catch (err) {
@@ -114,7 +136,7 @@ export function useCalls() {
         return null;
       }
     },
-    [user, setActiveCall]
+    [user, setActiveCall, setCallStatus]
   );
 
   const acceptCall = useCallback(async () => {
@@ -138,12 +160,17 @@ export function useCalls() {
       });
       setIncomingCall(null);
 
+      // Listen for peer connection
+      manager.onConnected = () => {
+        setCallStatus("connected");
+      };
+
       return localStream;
     } catch (err) {
       console.error("Failed to accept call:", err);
       return null;
     }
-  }, [user, incomingCall, setActiveCall, setIncomingCall]);
+  }, [user, incomingCall, setActiveCall, setIncomingCall, setCallStatus]);
 
   const declineCall = useCallback(async () => {
     if (!user || !incomingCall) return;
@@ -176,6 +203,7 @@ export function useCalls() {
   return {
     incomingCall,
     activeCall,
+    callStatus,
     initiateCall,
     acceptCall,
     declineCall,

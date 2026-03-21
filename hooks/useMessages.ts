@@ -60,11 +60,11 @@ export function useMessages() {
 
     const { data: profilesData } = await supabase
       .from("profiles")
-      .select("id, username, display_name, avatar_url")
+      .select("id, username, display_name, avatar_url, is_online")
       .in("id", userIds);
 
     const profilesMap = new Map(
-      (profilesData ?? []).map((p) => [p.id, p as { id: string; username: string; display_name: string | null; avatar_url: string | null }])
+      (profilesData ?? []).map((p) => [p.id, p as { id: string; username: string; display_name: string | null; avatar_url: string | null; is_online: boolean }])
     );
 
     const myParticipationMap = new Map(
@@ -117,7 +117,7 @@ export function useMessages() {
         const senderIds = [...new Set(msgs.map((m) => m.sender_id))];
         const { data: profilesData } = await supabase
           .from("profiles")
-          .select("id, username, display_name, avatar_url")
+          .select("id, username, display_name, avatar_url, is_online")
           .in("id", senderIds);
         const profilesMap = new Map((profilesData ?? []).map((p) => [p.id, p]));
         const enriched: Message[] = msgs.map((m) => ({

@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { MobileNavBar } from "./MobileNavBar";
 import { useAuth } from "@/hooks/useAuth";
+import { usePresence } from "@/hooks/usePresence";
+import { useRealtimeBadges } from "@/hooks/useRealtimeBadges";
 import { useCallStore, useCreatePostStore } from "@/lib/store";
 import { IncomingCallBanner } from "@/components/calls/IncomingCallBanner";
 import { CallOverlay } from "@/components/calls/CallOverlay";
@@ -15,6 +17,8 @@ const AUTH_PATHS = ["/auth"];
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, loading } = useAuth();
+  usePresence();
+  useRealtimeBadges();
   const { activeCall } = useCallStore();
   const { open: createPostOpen, setOpen: setCreatePostOpen } = useCreatePostStore();
 

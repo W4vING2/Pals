@@ -125,9 +125,6 @@ export default function SearchPage() {
       <div className="max-w-2xl mx-auto px-4 py-6">
         {/* Sticky search bar */}
         <div className="sticky top-0 z-10 pb-4 bg-[var(--bg-base)]">
-          <h1 className="text-2xl font-bold font-display text-[var(--text-primary)] mb-4">
-            Search
-          </h1>
           <motion.div
             className="relative"
             initial={false}

@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Home, Search, PlusCircle, MessageCircle, User, Bell } from "lucide-react";
-import { useAuthStore, useNotificationStore } from "@/lib/store";
+import { useAuthStore, useNotificationStore, useUnreadMessagesStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -28,6 +28,7 @@ export function DesktopSidebar() {
   const pathname = usePathname();
   const profile = useAuthStore((s) => s.profile);
   const unreadCount = useNotificationStore((s) => s.unreadCount);
+  const unreadMessages = useUnreadMessagesStore((s) => s.unreadMessagesCount);
 
   function isActive(href: string, isDynamic?: boolean) {
     if (isDynamic) {
@@ -77,6 +78,11 @@ export function DesktopSidebar() {
                 {item.label === "Notifications" && unreadCount > 0 && (
                   <span className="absolute -right-1.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--destructive)] px-1 text-[10px] font-bold text-white">
                     {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+                {item.label === "Messages" && unreadMessages > 0 && (
+                  <span className="absolute -right-1.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--destructive)] px-1 text-[10px] font-bold text-white">
+                    {unreadMessages > 99 ? "99+" : unreadMessages}
                   </span>
                 )}
               </span>

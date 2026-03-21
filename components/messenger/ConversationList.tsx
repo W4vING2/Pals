@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, MessageSquare, Users } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { OnlineIndicator } from "@/components/shared/OnlineIndicator";
 import { cn } from "@/lib/utils";
 import type { ConversationWithDetails } from "@/hooks/useMessages";
 import { useAuthStore } from "@/lib/store";
@@ -124,7 +125,7 @@ export function ConversationList({
                     "bg-[var(--bg-elevated)] border-l-2 border-l-[var(--accent-blue)]"
                 )}
               >
-                <div className="shrink-0">
+                <div className="relative shrink-0">
                   {avatarUrl ? (
                     <img
                       src={avatarUrl}
@@ -144,6 +145,12 @@ export function ConversationList({
                         name[0]?.toUpperCase()
                       )}
                     </div>
+                  )}
+                  {!isGroup && (
+                    <OnlineIndicator
+                      isOnline={otherProfile?.is_online ?? false}
+                      size="sm"
+                    />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
