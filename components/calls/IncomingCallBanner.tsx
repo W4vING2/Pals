@@ -16,9 +16,9 @@ export function IncomingCallBanner() {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: -120, opacity: 0 }}
           transition={{ type: "spring", stiffness: 300, damping: 28 }}
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-50"
+          className="fixed top-4 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-[60]"
         >
-          <div className="bg-[var(--bg-elevated)]/80 backdrop-blur-xl rounded-3xl shadow-lg border border-[var(--border)] p-4 flex items-center gap-4 min-w-80 max-w-sm">
+          <div className="bg-[var(--bg-elevated)]/80 backdrop-blur-xl rounded-3xl shadow-lg border border-[var(--border)] p-4 flex items-center gap-3 sm:gap-4 sm:min-w-80 max-w-sm mx-auto">
             {/* Pulsing avatar */}
             <div className="relative shrink-0">
               <motion.span
@@ -65,12 +65,12 @@ export function IncomingCallBanner() {
                 {incomingCall.type === "video" ? (
                   <>
                     <Video className="w-3 h-3" />
-                    Incoming video call
+                    Video call
                   </>
                 ) : (
                   <>
                     <Phone className="w-3 h-3" />
-                    Incoming voice call
+                    Voice call
                   </>
                 )}
               </p>
@@ -79,7 +79,7 @@ export function IncomingCallBanner() {
             {/* Decline */}
             <button
               onClick={declineCall}
-              className="w-10 h-10 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white transition-all duration-150 active:scale-95 shrink-0"
+              className="w-12 h-12 sm:w-10 sm:h-10 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white transition-all duration-150 active:scale-95 shrink-0"
               aria-label="Decline"
             >
               <PhoneOff className="w-5 h-5" />
@@ -88,7 +88,7 @@ export function IncomingCallBanner() {
             {/* Accept */}
             <button
               onClick={acceptCall}
-              className="w-10 h-10 rounded-full bg-[var(--accent-mint)] hover:bg-[var(--accent-mint-hover)] flex items-center justify-center text-[var(--bg-base)] transition-all duration-150 active:scale-95 shrink-0"
+              className="w-12 h-12 sm:w-10 sm:h-10 rounded-full bg-[var(--accent-mint)] hover:bg-[var(--accent-mint-hover)] flex items-center justify-center text-[var(--bg-base)] transition-all duration-150 active:scale-95 shrink-0"
               aria-label="Accept"
             >
               <Phone className="w-5 h-5" />

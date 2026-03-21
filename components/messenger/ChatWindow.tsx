@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
+  ArrowLeft,
   Phone,
   Video,
   Paperclip,
@@ -26,6 +27,7 @@ interface ChatWindowProps {
   onUploadImage: (file: File) => Promise<string | null>;
   onInitiateCall?: (type: "voice" | "video") => void;
   onOpenGroupSettings?: () => void;
+  onBack?: () => void;
 }
 
 function SkeletonMessages() {
@@ -60,6 +62,7 @@ export function ChatWindow({
   onUploadImage,
   onInitiateCall,
   onOpenGroupSettings,
+  onBack,
 }: ChatWindowProps) {
   const { user } = useAuthStore();
   const [text, setText] = useState("");
@@ -161,6 +164,15 @@ export function ChatWindow({
     <div className="flex flex-col h-full">
       {/* Header */}
       {conversation && <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] bg-[var(--bg-surface)]">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="w-8 h-8 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors lg:hidden shrink-0"
+            aria-label="Back"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+        )}
         <div className="relative shrink-0">
           {chatAvatarUrl ? (
             <img

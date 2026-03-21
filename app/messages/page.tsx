@@ -11,7 +11,6 @@ import { ChatWindow } from "@/components/messenger/ChatWindow";
 import { CreateGroup } from "@/components/messenger/CreateGroup";
 import { GroupSettings } from "@/components/messenger/GroupSettings";
 import { PageTransition } from "@/components/layout/PageTransition";
-import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function MessagesPage() {
@@ -126,7 +125,7 @@ export default function MessagesPage() {
           )}
         >
 
-          <div className="h-[calc(100%-64px)] overflow-hidden">
+          <div className="h-full overflow-hidden">
             <ConversationList
               conversations={conversations}
               activeId={activeConversationId}
@@ -145,18 +144,6 @@ export default function MessagesPage() {
             mobileView === "list" ? "hidden" : "flex"
           )}
         >
-          {mobileView === "chat" && (
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--border)] lg:hidden bg-[var(--bg-surface)]">
-              <button
-                onClick={handleBack}
-                className="w-8 h-8 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                aria-label="Back"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-            </div>
-          )}
-
           <ChatWindow
             conversation={activeConv}
             messages={messages}
@@ -165,6 +152,7 @@ export default function MessagesPage() {
             onUploadImage={uploadMessageImage}
             onInitiateCall={handleInitiateCall}
             onOpenGroupSettings={() => setGroupSettingsOpen(true)}
+            onBack={handleBack}
           />
         </div>
       </div>
