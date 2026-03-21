@@ -18,63 +18,64 @@
   --radius-modal: 1.5rem;
 }
 
-/* ── App tokens – Telegram dark style ────────────────────── */
+/* ── App tokens – Pure black + neon accents ──────────────── */
 :root {
-  --bg-base: hsl(210 15% 8%);
-  --bg-surface: hsl(210 15% 12%);
-  --bg-elevated: hsl(210 12% 16%);
-  --bg-input: hsl(210 14% 14%);
-  --text-primary: hsl(210 20% 92%);
-  --text-secondary: hsl(210 10% 55%);
-  --accent-blue: hsl(210 100% 55%);
-  --accent-blue-hover: hsl(210 100% 62%);
-  --accent-mint: hsl(160 100% 45%);
-  --border: hsl(210 10% 18%);
-  --border-strong: hsl(210 10% 24%);
+  --bg-base: #000000;
+  --bg-surface: #0a0a0a;
+  --bg-elevated: #141414;
+  --bg-input: #0e0e0e;
+  --text-primary: #f0f0f0;
+  --text-secondary: #666666;
+  --accent-blue: #a855f7;
+  --accent-blue-hover: #b97afc;
+  --accent-mint: #00e676;
+  --accent-mint-hover: #33eb91;
+  --border: #1a1a1a;
+  --border-strong: #2a2a2a;
   --destructive: hsl(0 72% 51%);
-  --success: hsl(142 70% 45%);
-  --glass-bg: rgba(15, 18, 25, 0.72);
+  --success: #00e676;
+  --glass-bg: rgba(0, 0, 0, 0.78);
   --glass-border: rgba(255, 255, 255, 0.06);
-  --overlay: rgba(0, 0, 0, 0.6);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
-  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.6);
+  --overlay: rgba(0, 0, 0, 0.7);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.6);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.8);
 }
 
-/* ── shadcn tokens – mapped to dark theme ────────────────── */
+/* ── shadcn tokens – mapped to pure black theme ──────────── */
 :root {
-  --background: hsl(210 15% 8%);
-  --foreground: hsl(210 20% 92%);
-  --card: hsl(210 15% 12%);
-  --card-foreground: hsl(210 20% 92%);
-  --popover: hsl(210 15% 12%);
-  --popover-foreground: hsl(210 20% 92%);
-  --primary: hsl(210 100% 55%);
-  --primary-foreground: hsl(0 0% 100%);
-  --secondary: hsl(210 12% 16%);
-  --secondary-foreground: hsl(210 20% 92%);
-  --muted: hsl(210 12% 16%);
-  --muted-foreground: hsl(210 10% 55%);
-  --accent: hsl(210 12% 16%);
-  --accent-foreground: hsl(210 20% 92%);
+  --background: #000000;
+  --foreground: #f0f0f0;
+  --card: #0a0a0a;
+  --card-foreground: #f0f0f0;
+  --popover: #0a0a0a;
+  --popover-foreground: #f0f0f0;
+  --primary: #a855f7;
+  --primary-foreground: #ffffff;
+  --secondary: #141414;
+  --secondary-foreground: #f0f0f0;
+  --muted: #141414;
+  --muted-foreground: #666666;
+  --accent: #141414;
+  --accent-foreground: #f0f0f0;
   --destructive: hsl(0 72% 51%);
-  --border: hsl(210 10% 18%);
-  --input: hsl(210 14% 14%);
-  --ring: hsl(210 100% 55%);
+  --border: #1a1a1a;
+  --input: #0e0e0e;
+  --ring: #a855f7;
   --radius: 0.75rem;
-  --chart-1: hsl(210 100% 55%);
-  --chart-2: hsl(160 100% 45%);
-  --chart-3: hsl(270 70% 55%);
+  --chart-1: #a855f7;
+  --chart-2: #00e676;
+  --chart-3: #c084fc;
   --chart-4: hsl(30 90% 55%);
   --chart-5: hsl(340 75% 55%);
-  --sidebar: hsl(210 15% 10%);
-  --sidebar-foreground: hsl(210 20% 92%);
-  --sidebar-primary: hsl(210 100% 55%);
-  --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: hsl(210 12% 16%);
-  --sidebar-accent-foreground: hsl(210 20% 92%);
-  --sidebar-border: hsl(210 10% 18%);
-  --sidebar-ring: hsl(210 100% 55%);
+  --sidebar: #050505;
+  --sidebar-foreground: #f0f0f0;
+  --sidebar-primary: #a855f7;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #141414;
+  --sidebar-accent-foreground: #f0f0f0;
+  --sidebar-border: #1a1a1a;
+  --sidebar-ring: #a855f7;
 }
 
 @theme inline {
@@ -166,7 +167,7 @@ body {
 }
 
 .glass-nav {
-  background: rgba(15, 18, 25, 0.72);
+  background: rgba(0, 0, 0, 0.82);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
@@ -174,7 +175,7 @@ body {
 
 /* ── Gradient text ────────────────────────────────────────── */
 .gradient-text {
-  background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-mint) 100%);
+  background: linear-gradient(135deg, #a855f7 0%, #00e676 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -182,7 +183,7 @@ body {
 
 /* ── Gradient button bg ───────────────────────────────────── */
 .gradient-bg {
-  background: linear-gradient(135deg, var(--accent-blue) 0%, #6f5ef7 100%);
+  background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
 }
 
 /* ── Animations ───────────────────────────────────────────── */
@@ -226,6 +227,22 @@ body {
 }
 
 /* ── Animation utility classes ────────────────────────────── */
+/* ── Input focus — subtle purple glow ────────────────────── */
+input:focus,
+textarea:focus {
+  outline: none;
+}
+
+.input-focus:focus {
+  border-color: rgba(168, 85, 247, 0.45);
+  box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.15);
+}
+
+.input-no-focus:focus {
+  border-color: var(--border);
+  box-shadow: none;
+}
+
 .animate-fade-in   { animation: fadeIn 0.2s ease-out both; }
 .animate-slide-up  { animation: slideUp 0.3s ease-out both; }
 .animate-slide-down { animation: slideDown 0.25s ease-out both; }
@@ -249,12 +266,16 @@ body {
 :focus-visible {
   outline: 2px solid var(--accent-blue);
   outline-offset: 2px;
-  border-radius: 4px;
+}
+
+input:focus-visible,
+textarea:focus-visible {
+  outline: none !important;
 }
 
 /* ── Selection ────────────────────────────────────────────── */
 ::selection {
-  background: rgba(79, 142, 247, 0.3);
+  background: rgba(168, 85, 247, 0.35);
   color: var(--text-primary);
 }
 

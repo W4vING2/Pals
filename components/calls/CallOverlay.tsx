@@ -32,9 +32,10 @@ export function CallOverlay() {
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const caller = activeCall?.callerProfile;
-  const callerName =
-    caller?.display_name ?? caller?.username ?? "Unknown";
+  // Use remoteProfile for displaying the other person's info
+  const remote = activeCall?.remoteProfile;
+  const remoteName =
+    remote?.display_name ?? remote?.username ?? "Unknown";
 
   useEffect(() => {
     if (!activeCall) return;
@@ -103,19 +104,19 @@ export function CallOverlay() {
             />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-[var(--bg-base)] to-[var(--bg-elevated)]">
-              {caller?.avatar_url ? (
+              {remote?.avatar_url ? (
                 <img
-                  src={caller.avatar_url}
-                  alt={callerName}
+                  src={remote.avatar_url}
+                  alt={remoteName}
                   className="w-24 h-24 rounded-full object-cover"
                 />
               ) : (
-                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-3xl font-bold">
-                  {callerName[0]?.toUpperCase()}
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-3xl font-bold">
+                  {remoteName[0]?.toUpperCase()}
                 </div>
               )}
               <p className="text-xl font-semibold text-[var(--text-primary)]">
-                {callerName}
+                {remoteName}
               </p>
               <p className="text-sm text-[var(--text-secondary)]">
                 Connecting...
@@ -146,7 +147,7 @@ export function CallOverlay() {
                     className="w-10 h-10 rounded-full object-cover"
                   />
                 ) : (
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-sm font-semibold">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-sm font-semibold">
                     {(
                       profile?.display_name ??
                       profile?.username ??
@@ -170,21 +171,21 @@ export function CallOverlay() {
         <div className="w-full h-full flex flex-col items-center justify-center gap-6 bg-gradient-to-b from-[var(--accent-blue)]/10 to-[var(--bg-base)]">
           <div className="relative">
             <span className="absolute inset-0 rounded-full bg-[var(--accent-blue)]/20 animate-ping scale-110" />
-            {caller?.avatar_url ? (
+            {remote?.avatar_url ? (
               <img
-                src={caller.avatar_url}
-                alt={callerName}
+                src={remote.avatar_url}
+                alt={remoteName}
                 className="w-24 h-24 rounded-full object-cover relative z-10"
               />
             ) : (
-              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-3xl font-bold relative z-10">
-                {callerName[0]?.toUpperCase()}
+              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-3xl font-bold relative z-10">
+                {remoteName[0]?.toUpperCase()}
               </div>
             )}
           </div>
           <div className="text-center">
             <p className="text-2xl font-bold text-[var(--text-primary)]">
-              {callerName}
+              {remoteName}
             </p>
             <p className="text-sm text-[var(--text-secondary)] mt-1">
               {formatDuration(duration)}

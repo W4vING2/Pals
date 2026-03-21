@@ -1,8 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { memo } from "react";
 import Image from "next/image";
-import { motion } from "framer-motion";
 import { Check, CheckCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/lib/supabase";
@@ -11,6 +10,8 @@ interface MessageBubbleProps {
   message: Message;
   isOwn: boolean;
   showAvatar?: boolean;
+  /** Only animate entrance for newly added messages, not historical ones */
+  animate?: boolean;
 }
 
 function formatTime(dateStr: string): string {
@@ -20,19 +21,21 @@ function formatTime(dateStr: string): string {
   });
 }
 
-export function MessageBubble({
+export const MessageBubble = memo(function MessageBubble({
   message,
   isOwn,
   showAvatar,
+  animate: shouldAnimate = false,
 }: MessageBubbleProps) {
   const profile = message.profiles;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-      className={cn("flex items-end gap-2", isOwn ? "flex-row-reverse" : "flex-row")}
+    <div
+      className={cn(
+        "flex items-end gap-2",
+        isOwn ? "flex-row-reverse" : "flex-row",
+        shouldAnimate && "animate-fade-in"
+      )}
     >
       {/* Avatar placeholder for spacing */}
       <div className="w-7 shrink-0">
@@ -43,7 +46,7 @@ export function MessageBubble({
             className="w-7 h-7 rounded-full object-cover"
           />
         ) : !isOwn && showAvatar ? (
-          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-xs font-semibold">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-xs font-semibold">
             {(
               profile?.display_name ??
               profile?.username ??
@@ -101,6 +104,6 @@ export function MessageBubble({
             ))}
         </div>
       </div>
-    </motion.div>
+    </div>
   );
-}
+});

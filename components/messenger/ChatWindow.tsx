@@ -1,13 +1,15 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Phone,
   Video,
   Paperclip,
   SendHorizontal,
   MessageSquare,
+  Settings,
+  Users,
 } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import { cn } from "@/lib/utils";
@@ -22,6 +24,7 @@ interface ChatWindowProps {
   onSend: (content: string, imageUrl?: string) => Promise<void>;
   onUploadImage: (file: File) => Promise<string | null>;
   onInitiateCall?: (type: "voice" | "video") => void;
+  onOpenGroupSettings?: () => void;
 }
 
 function SkeletonMessages() {
@@ -55,6 +58,7 @@ export function ChatWindow({
   onSend,
   onUploadImage,
   onInitiateCall,
+  onOpenGroupSettings,
 }: ChatWindowProps) {
   const { user } = useAuthStore();
   const [text, setText] = useState("");
@@ -63,6 +67,20 @@ export function ChatWindow({
   const [justSent, setJustSent] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Track message IDs that were loaded initially (no animation needed)
+  const initialMsgIdsRef = useRef<Set<string>>(new Set());
+
+  // When loading finishes, snapshot current message IDs as "initial" (no animation)
+  useEffect(() => {
+    if (!loading && messages.length > 0 && initialMsgIdsRef.current.size === 0) {
+      initialMsgIdsRef.current = new Set(messages.map((m) => m.id));
+    }
+  }, [loading, messages]);
+
+  // Reset initial IDs when conversation changes
+  useEffect(() => {
+    initialMsgIdsRef.current = new Set();
+  }, [conversation?.id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -77,12 +95,17 @@ export function ChatWindow({
     }
   }, [conversation]);
 
-  const otherParticipant = conversation?.participants.find(
-    (p) => p.user_id !== user?.id
-  );
+  const isGroup = conversation?.is_group ?? false;
+  const otherParticipant = isGroup
+    ? null
+    : conversation?.participants.find((p) => p.user_id !== user?.id);
   const otherProfile = otherParticipant?.profiles;
-  const otherName =
-    otherProfile?.display_name ?? otherProfile?.username ?? "Unknown";
+  const chatName = isGroup
+    ? conversation?.name ?? "Group"
+    : otherProfile?.display_name ?? otherProfile?.username ?? "Unknown";
+  const chatAvatarUrl = isGroup
+    ? conversation?.avatar_url
+    : otherProfile?.avatar_url;
 
   const handleSend = async () => {
     const trimmed = text.trim();
@@ -137,47 +160,68 @@ export function ChatWindow({
     <div className="flex flex-col h-full">
       {/* Header */}
       {conversation && <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] bg-[var(--bg-surface)]">
-        {otherProfile?.avatar_url ? (
+        {chatAvatarUrl ? (
           <img
-            src={otherProfile.avatar_url}
-            alt={otherName}
+            src={chatAvatarUrl}
+            alt={chatName}
             className="w-9 h-9 rounded-full object-cover shrink-0"
           />
         ) : (
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
-            {otherName[0]?.toUpperCase()}
+          <div className={cn(
+            "w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0",
+            isGroup
+              ? "bg-gradient-to-br from-purple-600 to-indigo-500"
+              : "bg-gradient-to-br from-purple-500 to-emerald-500"
+          )}>
+            {isGroup ? <Users className="size-4" /> : chatName[0]?.toUpperCase()}
           </div>
         )}
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sm text-[var(--text-primary)] truncate">
-            {otherName}
+            {chatName}
           </p>
-          {otherProfile?.username && (
+          {isGroup ? (
+            <p className="text-xs text-[var(--text-secondary)]">
+              {conversation.participants.length} members
+            </p>
+          ) : otherProfile?.username ? (
             <p className="text-xs text-[var(--text-secondary)]">
               @{otherProfile.username}
             </p>
-          )}
+          ) : null}
         </div>
 
-        {/* Call buttons */}
-        {onInitiateCall && (
-          <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1">
+          {/* Group settings */}
+          {isGroup && onOpenGroupSettings && (
             <button
-              onClick={() => onInitiateCall("voice")}
+              onClick={onOpenGroupSettings}
               className="w-9 h-9 rounded-xl flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)] transition-all duration-150"
-              aria-label="Voice call"
+              aria-label="Group settings"
             >
-              <Phone className="w-5 h-5" />
+              <Settings className="w-5 h-5" />
             </button>
-            <button
-              onClick={() => onInitiateCall("video")}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)] transition-all duration-150"
-              aria-label="Video call"
-            >
-              <Video className="w-5 h-5" />
-            </button>
-          </div>
-        )}
+          )}
+          {/* Call buttons (only for DMs) */}
+          {!isGroup && onInitiateCall && (
+            <>
+              <button
+                onClick={() => onInitiateCall("voice")}
+                className="w-9 h-9 rounded-xl flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)] transition-all duration-150"
+                aria-label="Voice call"
+              >
+                <Phone className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => onInitiateCall("video")}
+                className="w-9 h-9 rounded-xl flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)] transition-all duration-150"
+                aria-label="Video call"
+              >
+                <Video className="w-5 h-5" />
+              </button>
+            </>
+          )}
+        </div>
       </div>}
 
       {/* Messages */}
@@ -202,6 +246,7 @@ export function ChatWindow({
                 message={msg}
                 isOwn={isOwn}
                 showAvatar={showAvatar}
+                animate={!initialMsgIdsRef.current.has(msg.id)}
               />
             );
           })

@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useCallback, useEffect, memo } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircle, Share2, Send, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,11 +12,14 @@ import { LikeButton } from "@/components/shared/LikeButton";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { useAuthStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { ImageLightbox } from "@/components/shared/ImageLightbox";
 import type { Post } from "@/lib/supabase";
 
 interface PostCardProps {
   post: Post;
-  onUpdate?: (post: Post) => void;
+  initialLiked?: boolean;
+  /** Mark as LCP candidate — loads image eagerly with priority */
+  priority?: boolean;
 }
 
 function timeAgo(dateStr: string): string {
@@ -40,21 +44,49 @@ function getInitials(name: string): string {
     .toUpperCase();
 }
 
-export function PostCard({ post, onUpdate }: PostCardProps) {
+export const PostCard = memo(function PostCard({ post, initialLiked, priority }: PostCardProps) {
   const { user } = useAuthStore();
-  const [liked, setLiked] = useState(false);
+  const router = useRouter();
+  const [liked, setLiked] = useState(initialLiked ?? false);
   const [likeCount, setLikeCount] = useState(post.likes_count ?? 0);
+
+  // Load like status from DB when initialLiked isn't provided
+  useEffect(() => {
+    if (initialLiked !== undefined || !user) return;
+    const supabase = getSupabaseBrowserClient();
+    supabase
+      .from("likes")
+      .select("id")
+      .eq("post_id", post.id)
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => { if (data) setLiked(true); });
+  }, [initialLiked, user, post.id]);
+
+  // Sync when parent passes initialLiked later (after batch load)
+  useEffect(() => {
+    if (initialLiked !== undefined) setLiked(initialLiked);
+  }, [initialLiked]);
   const [likePending, setLikePending] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<Array<{id: string; content: string; created_at: string; profiles?: {username: string; display_name: string | null; avatar_url: string | null}}>>([]);
   const [commentText, setCommentText] = useState("");
   const [commentLoading, setCommentLoading] = useState(false);
   const [commentCount, setCommentCount] = useState(post.comments_count ?? 0);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   const profile = post.profiles;
   const name = profile?.display_name ?? profile?.username ?? "Unknown";
 
-  const toggleLike = async () => {
+  // Sync counts from parent (real-time updates)
+  const displayLikeCount = post.likes_count !== likeCount && !likePending
+    ? post.likes_count ?? likeCount
+    : likeCount;
+  const displayCommentCount = post.comments_count !== commentCount && !commentLoading
+    ? post.comments_count ?? commentCount
+    : commentCount;
+
+  const toggleLike = useCallback(async () => {
     if (!user || likePending) return;
     setLikePending(true);
     const supabase = getSupabaseBrowserClient();
@@ -73,17 +105,9 @@ export function PostCard({ post, onUpdate }: PostCardProps) {
       setLikeCount((c) => c + 1);
     }
     setLikePending(false);
-  };
+  }, [user, liked, likePending, post.id]);
 
-  // Load like status on mount
-  useEffect(() => {
-    if (!user) return;
-    const supabase = getSupabaseBrowserClient();
-    supabase.from("likes").select("id").eq("post_id", post.id).eq("user_id", user.id).maybeSingle()
-      .then(({ data }) => { if (data) setLiked(true); });
-  }, [user, post.id]);
-
-  const loadComments = async () => {
+  const loadComments = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
     const { data } = await supabase
       .from("comments")
@@ -91,15 +115,15 @@ export function PostCard({ post, onUpdate }: PostCardProps) {
       .eq("post_id", post.id)
       .order("created_at", { ascending: true });
     if (data) setComments(data as typeof comments);
-  };
+  }, [post.id]);
 
-  const handleToggleComments = async () => {
+  const handleToggleComments = useCallback(async () => {
     const opening = !showComments;
     setShowComments(opening);
     if (opening) await loadComments();
-  };
+  }, [showComments, loadComments]);
 
-  const submitComment = async () => {
+  const submitComment = useCallback(async () => {
     if (!user || !commentText.trim()) return;
     setCommentLoading(true);
     const supabase = getSupabaseBrowserClient();
@@ -112,31 +136,35 @@ export function PostCard({ post, onUpdate }: PostCardProps) {
     setCommentCount((c) => c + 1);
     await loadComments();
     setCommentLoading(false);
-  };
+  }, [user, commentText, post.id, loadComments]);
 
-  const handleShare = async () => {
+  const handleShare = useCallback(async () => {
+    const postUrl = `${window.location.origin}/post/${post.id}`;
     if (navigator.share) {
       await navigator.share({
         title: `Post by ${name}`,
         text: post.content,
-        url: window.location.href,
+        url: postUrl,
       });
     } else {
-      await navigator.clipboard.writeText(window.location.href);
+      await navigator.clipboard.writeText(postUrl);
     }
-  };
+  }, [name, post.content, post.id]);
+
+  const navigateToPost = useCallback(() => {
+    router.push(`/post/${post.id}`);
+  }, [router, post.id]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
-    >
-      <Card className="rounded-2xl bg-[var(--bg-surface)] border-[var(--border)] p-0 gap-0">
+    <div className="animate-fade-in">
+      <Card
+        className="rounded-2xl bg-[var(--bg-surface)] border-[var(--border)] p-0 gap-0 cursor-pointer"
+        onClick={navigateToPost}
+      >
         <CardContent className="p-4 space-y-3">
           {/* Header */}
           <div className="flex items-center gap-3">
-            <Link href={`/profile/${profile?.username ?? ""}`}>
+            <Link href={`/profile/${profile?.username ?? ""}`} onClick={(e) => e.stopPropagation()}>
               <Avatar size="default">
                 {profile?.avatar_url ? (
                   <AvatarImage src={profile.avatar_url} />
@@ -148,6 +176,7 @@ export function PostCard({ post, onUpdate }: PostCardProps) {
               <div className="flex items-center gap-2">
                 <Link
                   href={`/profile/${profile?.username ?? ""}`}
+                  onClick={(e) => e.stopPropagation()}
                   className="font-semibold text-sm text-[var(--text-primary)] hover:underline truncate"
                 >
                   {name}
@@ -171,61 +200,69 @@ export function PostCard({ post, onUpdate }: PostCardProps) {
 
           {/* Image */}
           {post.image_url && (
-            <div className="relative rounded-xl overflow-hidden bg-[var(--bg-elevated)]" style={{ aspectRatio: "16/9" }}>
+            <div
+              className="relative rounded-xl overflow-hidden bg-[var(--bg-elevated)] cursor-zoom-in"
+              style={{ aspectRatio: "16/9" }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setLightboxSrc(post.image_url!);
+              }}
+            >
               <Image
                 src={post.image_url}
                 alt="Post image"
                 fill
                 className="object-cover"
                 sizes="(max-width: 640px) 100vw, 600px"
+                priority={priority}
+                loading={priority ? "eager" : "lazy"}
               />
             </div>
           )}
 
           {/* Actions */}
-          <div className="flex items-center gap-1 pt-1">
+          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+          <div className="flex items-center gap-1 pt-1" onClick={(e) => e.stopPropagation()}>
             {/* Like */}
-            <motion.div whileTap={{ scale: 0.9 }}>
-              <LikeButton
-                liked={liked}
-                count={likeCount}
-                onToggle={toggleLike}
-                className="px-3 py-1.5 rounded-xl hover:bg-[var(--bg-elevated)] transition-colors"
-              />
-            </motion.div>
+            <LikeButton
+              liked={liked}
+              count={displayLikeCount}
+              onToggle={toggleLike}
+              className="px-3 py-1.5 rounded-xl hover:bg-[var(--bg-elevated)] transition-colors"
+            />
 
             {/* Comment */}
-            <motion.button
-              whileTap={{ scale: 0.9 }}
+            <button
               onClick={handleToggleComments}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium",
                 "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)]",
-                "transition-colors",
+                "transition-colors active:scale-95",
                 showComments && "text-[var(--accent-blue)]"
               )}
             >
               <MessageCircle className="w-[18px] h-[18px]" />
-              {commentCount > 0 && (
-                <span className="tabular-nums">{commentCount}</span>
+              {displayCommentCount > 0 && (
+                <span className="tabular-nums">{displayCommentCount}</span>
               )}
-            </motion.button>
+            </button>
 
             {/* Share */}
-            <motion.button
-              whileTap={{ scale: 0.9 }}
+            <button
               onClick={handleShare}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium ml-auto",
                 "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)]",
-                "transition-colors"
+                "transition-colors active:scale-95"
               )}
             >
               <Share2 className="w-[18px] h-[18px]" />
-            </motion.button>
+            </button>
           </div>
 
           {/* Comments section */}
+          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+          <div onClick={(e) => e.stopPropagation()}>
           <AnimatePresence>
             {showComments && (
               <motion.div
@@ -241,7 +278,7 @@ export function PostCard({ post, onUpdate }: PostCardProps) {
                     <div className="space-y-2.5 max-h-60 overflow-y-auto">
                       {comments.map((c) => (
                         <div key={c.id} className="flex gap-2">
-                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
                             {(c.profiles?.display_name ?? c.profiles?.username ?? "?")[0]?.toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
@@ -269,14 +306,13 @@ export function PostCard({ post, onUpdate }: PostCardProps) {
                         onChange={(e) => setCommentText(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") submitComment(); }}
                         placeholder="Write a comment..."
-                        className="flex-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-full px-3 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none focus:border-[var(--accent-blue)] transition-colors"
+                        className="flex-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-full px-3 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none input-focus transition-colors"
                       />
-                      <motion.button
-                        whileTap={{ scale: 0.9 }}
+                      <button
                         onClick={submitComment}
                         disabled={!commentText.trim() || commentLoading}
                         className={cn(
-                          "w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-colors",
+                          "w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-colors active:scale-95",
                           commentText.trim()
                             ? "bg-[var(--accent-blue)] text-white"
                             : "text-[var(--text-secondary)]"
@@ -287,15 +323,17 @@ export function PostCard({ post, onUpdate }: PostCardProps) {
                         ) : (
                           <Send className="w-3.5 h-3.5" />
                         )}
-                      </motion.button>
+                      </button>
                     </div>
                   )}
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
+          </div>
         </CardContent>
       </Card>
-    </motion.div>
+      <ImageLightbox src={lightboxSrc} alt="Post image" onClose={() => setLightboxSrc(null)} />
+    </div>
   );
-}
+});

@@ -126,7 +126,7 @@ export default function AuthPage() {
         transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
       />
       <motion.div
-        className="absolute bottom-[-5%] right-[10%] w-[24rem] h-[24rem] rounded-full bg-purple-500/8 blur-[100px]"
+        className="absolute bottom-[-5%] right-[10%] w-[24rem] h-[24rem] rounded-full bg-emerald-500/8 blur-[100px]"
         animate={{
           x: [0, -25, 15, 0],
           y: [0, 30, -25, 0],
@@ -135,7 +135,7 @@ export default function AuthPage() {
         transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
       />
       <motion.div
-        className="absolute top-[40%] right-[30%] w-[16rem] h-[16rem] rounded-full bg-cyan-500/6 blur-[80px]"
+        className="absolute top-[40%] right-[30%] w-[16rem] h-[16rem] rounded-full bg-purple-500/6 blur-[80px]"
         animate={{
           x: [0, 20, -10, 0],
           y: [0, -15, 25, 0],
@@ -152,7 +152,7 @@ export default function AuthPage() {
       >
         {/* Logo */}
         <div className="text-center mb-8">
-          <h1 className="text-5xl font-bold bg-gradient-to-r from-[var(--accent-blue)] to-cyan-400 bg-clip-text text-transparent">
+          <h1 className="text-5xl font-bold bg-gradient-to-r from-purple-400 to-emerald-400 bg-clip-text text-transparent">
             Pals
           </h1>
           <p className="text-sm text-[var(--text-secondary)] mt-2">

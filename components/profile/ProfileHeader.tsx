@@ -155,21 +155,26 @@ export function ProfileHeader({
     const ext = file.name.split(".").pop();
     const path = `avatars/${user.id}.${ext}`;
 
-    const { error } = await supabase.storage
+    const { error: uploadErr } = await supabase.storage
       .from("media")
       .upload(path, file, { upsert: true });
-    if (!error) {
-      const { data } = supabase.storage.from("media").getPublicUrl(path);
-      const { data: updated } = await supabase
-        .from("profiles")
-        .update({ avatar_url: data.publicUrl })
-        .eq("id", user.id)
-        .select()
-        .single();
-      if (updated) {
-        setStoreProfile(updated as Profile);
-        onProfileUpdated?.(updated as Profile);
-      }
+    if (uploadErr) {
+      console.error("Avatar upload error:", uploadErr);
+      setUploadingAvatar(false);
+      return;
+    }
+    const { data } = supabase.storage.from("media").getPublicUrl(path);
+    // Cache-bust: append timestamp so browser fetches the new image
+    const url = `${data.publicUrl}?t=${Date.now()}`;
+    const { data: updated } = await supabase
+      .from("profiles")
+      .update({ avatar_url: url })
+      .eq("id", user.id)
+      .select()
+      .single();
+    if (updated) {
+      setStoreProfile(updated as Profile);
+      onProfileUpdated?.(updated as Profile);
     }
     setUploadingAvatar(false);
   };
@@ -184,21 +189,25 @@ export function ProfileHeader({
     const ext = file.name.split(".").pop();
     const path = `covers/${user.id}.${ext}`;
 
-    const { error } = await supabase.storage
+    const { error: uploadErr } = await supabase.storage
       .from("media")
       .upload(path, file, { upsert: true });
-    if (!error) {
-      const { data } = supabase.storage.from("media").getPublicUrl(path);
-      const { data: updated } = await supabase
-        .from("profiles")
-        .update({ cover_url: data.publicUrl })
-        .eq("id", user.id)
-        .select()
-        .single();
-      if (updated) {
-        setStoreProfile(updated as Profile);
-        onProfileUpdated?.(updated as Profile);
-      }
+    if (uploadErr) {
+      console.error("Cover upload error:", uploadErr);
+      setUploadingCover(false);
+      return;
+    }
+    const { data } = supabase.storage.from("media").getPublicUrl(path);
+    const url = `${data.publicUrl}?t=${Date.now()}`;
+    const { data: updated } = await supabase
+      .from("profiles")
+      .update({ cover_url: url })
+      .eq("id", user.id)
+      .select()
+      .single();
+    if (updated) {
+      setStoreProfile(updated as Profile);
+      onProfileUpdated?.(updated as Profile);
     }
     setUploadingCover(false);
   };
@@ -230,7 +239,7 @@ export function ProfileHeader({
   return (
     <div>
       {/* Cover photo with gradient overlay */}
-      <div className="relative h-40 sm:h-56 bg-gradient-to-br from-[var(--accent-blue)]/30 to-purple-500/20 rounded-3xl overflow-hidden">
+      <div className="relative h-40 sm:h-56 bg-gradient-to-br from-purple-600/30 to-emerald-500/20 rounded-3xl overflow-hidden">
         {profile.cover_url && (
           <Image
             src={profile.cover_url}
@@ -272,7 +281,7 @@ export function ProfileHeader({
               className="absolute -inset-1 rounded-full"
               style={{
                 background:
-                  "conic-gradient(from 0deg, var(--accent-blue), #a855f7, #06b6d4, var(--accent-blue))",
+                  "conic-gradient(from 0deg, #a855f7, #00e676, #7c3aed, #a855f7)",
               }}
               animate={{ rotate: 360 }}
               transition={{
@@ -403,7 +412,7 @@ export function ProfileHeader({
                     onChange={(e) => setBio(e.target.value)}
                     rows={3}
                     maxLength={200}
-                    className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm text-[var(--text-primary)] resize-none focus:outline-none focus:border-[var(--accent-blue)] transition-colors"
+                    className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm text-[var(--text-primary)] resize-none outline-none input-focus transition-colors"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">

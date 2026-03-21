@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, MessageSquare } from "lucide-react";
+import { Search, MessageSquare, Users } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { ConversationWithDetails } from "@/hooks/useMessages";
@@ -13,6 +13,7 @@ interface ConversationListProps {
   activeId: string | null;
   loading: boolean;
   onSelect: (id: string) => void;
+  onCreateGroup?: () => void;
 }
 
 function timeAgo(dateStr: string | null): string {
@@ -43,12 +44,16 @@ export function ConversationList({
   activeId,
   loading,
   onSelect,
+  onCreateGroup,
 }: ConversationListProps) {
   const { user } = useAuthStore();
   const [search, setSearch] = useState("");
 
   const filtered = conversations.filter((conv) => {
     if (!search) return true;
+    if (conv.is_group) {
+      return (conv.name ?? "").toLowerCase().includes(search.toLowerCase());
+    }
     const other = conv.participants.find((p) => p.user_id !== user?.id);
     const name =
       other?.profiles?.display_name ?? other?.profiles?.username ?? "";
@@ -57,17 +62,26 @@ export function ConversationList({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Search */}
-      <div className="p-3 border-b border-[var(--border)]">
+      {/* Search + new group */}
+      <div className="p-3 border-b border-[var(--border)] space-y-2">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)]" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search conversations..."
-            className="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-full pl-9 pr-4 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent-blue)] transition-colors"
+            className="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-full pl-9 pr-4 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none input-focus transition-colors"
           />
         </div>
+        {onCreateGroup && (
+          <button
+            onClick={onCreateGroup}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/10 transition-colors"
+          >
+            <Users className="size-4" />
+            New group
+          </button>
+        )}
       </div>
 
       {/* List */}
@@ -83,14 +97,19 @@ export function ConversationList({
           </div>
         ) : (
           filtered.map((conv) => {
-            const other = conv.participants.find(
-              (p) => p.user_id !== user?.id
-            );
+            const isGroup = conv.is_group;
+            const other = isGroup
+              ? null
+              : conv.participants.find((p) => p.user_id !== user?.id);
             const otherProfile = other?.profiles;
-            const name =
-              otherProfile?.display_name ??
-              otherProfile?.username ??
-              "Unknown";
+            const name = isGroup
+              ? conv.name ?? "Group"
+              : otherProfile?.display_name ??
+                otherProfile?.username ??
+                "Unknown";
+            const avatarUrl = isGroup
+              ? conv.avatar_url
+              : otherProfile?.avatar_url;
             const isActive = conv.id === activeId;
 
             return (
@@ -106,15 +125,24 @@ export function ConversationList({
                 )}
               >
                 <div className="shrink-0">
-                  {otherProfile?.avatar_url ? (
+                  {avatarUrl ? (
                     <img
-                      src={otherProfile.avatar_url}
+                      src={avatarUrl}
                       alt={name}
                       className="w-10 h-10 rounded-full object-cover"
                     />
                   ) : (
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-sm font-semibold">
-                      {name[0]?.toUpperCase()}
+                    <div className={cn(
+                      "w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold",
+                      isGroup
+                        ? "bg-gradient-to-br from-purple-600 to-indigo-500"
+                        : "bg-gradient-to-br from-purple-500 to-emerald-500"
+                    )}>
+                      {isGroup ? (
+                        <Users className="size-5" />
+                      ) : (
+                        name[0]?.toUpperCase()
+                      )}
                     </div>
                   )}
                 </div>

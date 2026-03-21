@@ -2,8 +2,8 @@
   "name": "Pals",
   "short_name": "Pals",
   "description": "Social network for students",
-  "theme_color": "#4f8ef7",
-  "background_color": "#0d0f14",
+  "theme_color": "#a855f7",
+  "background_color": "#000000",
   "display": "standalone",
   "start_url": "/",
   "icons": [

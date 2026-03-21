@@ -44,7 +44,7 @@ export function IncomingCallBanner() {
                   className="w-10 h-10 rounded-full object-cover relative z-10"
                 />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-sm font-semibold relative z-10">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-sm font-semibold relative z-10">
                   {(
                     incomingCall.callerProfile?.display_name ??
                     incomingCall.callerProfile?.username ??

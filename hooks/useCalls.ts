@@ -48,6 +48,8 @@ export function useCalls() {
             setIncomingCall({
               callerId: signal.caller_id,
               callerProfile: callerProfile as Profile | null,
+              remoteUserId: signal.caller_id,
+              remoteProfile: callerProfile as Profile | null,
               conversationId: signal.conversation_id,
               type: signal.call_type,
               signal: signal.signal,
@@ -82,7 +84,8 @@ export function useCalls() {
       if (!user) return null;
 
       const manager = getWebRTCManager();
-      const { data: remoteProfile } = await getSupabaseBrowserClient()
+      const supabase = getSupabaseBrowserClient();
+      const { data: remoteProfile } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", remoteUserId)
@@ -99,6 +102,8 @@ export function useCalls() {
         setActiveCall({
           callerId: user.id,
           callerProfile: null,
+          remoteUserId,
+          remoteProfile: remoteProfile as Profile | null,
           conversationId,
           type: callType,
         });
@@ -126,7 +131,11 @@ export function useCalls() {
         incomingCall.type
       );
 
-      setActiveCall(incomingCall);
+      setActiveCall({
+        ...incomingCall,
+        remoteUserId: incomingCall.callerId,
+        remoteProfile: incomingCall.callerProfile,
+      });
       setIncomingCall(null);
 
       return localStream;
@@ -155,12 +164,12 @@ export function useCalls() {
   const hangup = useCallback(async () => {
     if (!user || !activeCall) return;
     const manager = getWebRTCManager();
-    const remoteId =
-      activeCall.callerId === user.id
-        ? activeCall.callerProfile?.id ?? ""
-        : activeCall.callerId;
 
-    await manager.hangup(activeCall.conversationId, user.id, remoteId);
+    await manager.hangup(
+      activeCall.conversationId,
+      user.id,
+      activeCall.remoteUserId
+    );
     endCall();
   }, [user, activeCall, endCall]);
 

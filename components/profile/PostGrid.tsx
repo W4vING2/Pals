@@ -2,11 +2,13 @@
 
 import React, { useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { PostCard } from "@/components/feed/PostCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Grid2X2, List, Heart, ImageOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ImageLightbox } from "@/components/shared/ImageLightbox";
 import type { Post } from "@/lib/supabase";
 
 interface PostGridProps {
@@ -16,6 +18,7 @@ interface PostGridProps {
 
 export function PostGrid({ posts, loading }: PostGridProps) {
   const [view, setView] = useState<"grid" | "list">("grid");
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -84,15 +87,22 @@ export function PostGrid({ posts, loading }: PostGridProps) {
       {view === "grid" ? (
         <div className="columns-2 gap-2 space-y-2">
           {posts.map((post, i) => (
+            <Link key={post.id} href={`/post/${post.id}`}>
             <motion.div
-              key={post.id}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: i * 0.05 }}
               className="relative break-inside-avoid bg-[var(--bg-elevated)] rounded-xl overflow-hidden group cursor-pointer"
             >
               {post.image_url ? (
-                <div className="relative aspect-auto">
+                <div
+                  className="relative aspect-auto cursor-zoom-in"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setLightboxSrc(post.image_url!);
+                  }}
+                >
                   <Image
                     src={post.image_url}
                     alt="Post"
@@ -117,6 +127,7 @@ export function PostGrid({ posts, loading }: PostGridProps) {
                 </span>
               </div>
             </motion.div>
+            </Link>
           ))}
         </div>
       ) : (
@@ -126,6 +137,7 @@ export function PostGrid({ posts, loading }: PostGridProps) {
           ))}
         </div>
       )}
+      <ImageLightbox src={lightboxSrc} alt="Post image" onClose={() => setLightboxSrc(null)} />
     </div>
   );
 }

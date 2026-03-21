@@ -70,6 +70,10 @@ export type Conversation = {
   updated_at: string;
   last_message: string | null;
   last_message_at: string | null;
+  is_group: boolean;
+  name: string | null;
+  avatar_url: string | null;
+  created_by: string | null;
 };
 
 export type ConversationParticipant = {
@@ -153,8 +157,8 @@ export type Database = {
       >;
       conversations: TableDef<
         Conversation,
-        { last_message?: string | null; last_message_at?: string | null },
-        Partial<{ last_message: string | null; last_message_at: string | null; updated_at: string }>
+        { last_message?: string | null; last_message_at?: string | null; is_group?: boolean; name?: string | null; avatar_url?: string | null; created_by?: string | null },
+        Partial<{ last_message: string | null; last_message_at: string | null; updated_at: string; name: string | null; avatar_url: string | null }>
       >;
       conversation_participants: TableDef<
         ConversationParticipant,

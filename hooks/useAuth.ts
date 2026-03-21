@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { User } from "@supabase/supabase-js";
+import type { User, AuthError } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { useAuthStore } from "@/lib/store";
 import type { Profile } from "@/lib/supabase";
@@ -44,6 +44,15 @@ async function loadOrCreateProfile(u: User) {
   return created as Profile | null;
 }
 
+/** Clear corrupted auth state and sign out gracefully */
+async function handleAuthError(supabase: ReturnType<typeof getSupabaseBrowserClient>) {
+  try {
+    await supabase.auth.signOut({ scope: "local" });
+  } catch {
+    // signOut itself may fail if session is broken — that's OK
+  }
+}
+
 export function useAuth() {
   const { user, profile, setUser, setProfile, signOut: storeSignOut } = useAuthStore();
   const [loading, setLoading] = useState(!user); // already loaded if user in store
@@ -59,7 +68,17 @@ export function useAuth() {
     const supabase = getSupabaseBrowserClient();
 
     // Get initial session once
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
+      // Handle invalid/expired refresh token
+      if (error) {
+        console.warn("Session error, clearing auth state:", error.message);
+        await handleAuthError(supabase);
+        setUser(null);
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+
       const u = session?.user ?? null;
       setUser(u);
       if (u) {
@@ -72,6 +91,25 @@ export function useAuth() {
     // Single auth state listener for the whole app
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        // TOKEN_REFRESHED with null session means refresh failed
+        if (event === "TOKEN_REFRESHED" && !session) {
+          console.warn("Token refresh failed, signing out");
+          await handleAuthError(supabase);
+          setUser(null);
+          setProfile(null);
+          storeSignOut();
+          setLoading(false);
+          return;
+        }
+
+        // SIGNED_OUT event — clean up
+        if (event === "SIGNED_OUT") {
+          setUser(null);
+          setProfile(null);
+          setLoading(false);
+          return;
+        }
+
         const u = session?.user ?? null;
         setUser(u);
         if (u && event !== "INITIAL_SESSION") {

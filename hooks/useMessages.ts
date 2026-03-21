@@ -20,14 +20,14 @@ export function useMessages() {
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const channelRef = useRef<ReturnType<ReturnType<typeof getSupabaseBrowserClient>["channel"]> | null>(null);
+  const convDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadConversations = useCallback(async () => {
     if (!user) return;
     setLoadingConversations(true);
     const supabase = getSupabaseBrowserClient();
 
-    // Use the underlying postgres client without deep typing for complex joins
-    const { data: rawData, error } = await (supabase as ReturnType<typeof getSupabaseBrowserClient>)
+    const { data: rawData, error } = await supabase
       .from("conversation_participants")
       .select("*")
       .eq("user_id", user.id)
@@ -48,20 +48,14 @@ export function useMessages() {
 
     const conversationIds = participantsData.map((p) => p.conversation_id);
 
-    // Load conversations
-    const { data: convData } = await supabase
-      .from("conversations")
-      .select("*")
-      .in("id", conversationIds);
+    // Parallel: load conversations + all participants at once
+    const [convResult, allPartResult] = await Promise.all([
+      supabase.from("conversations").select("*").in("id", conversationIds),
+      supabase.from("conversation_participants").select("*").in("conversation_id", conversationIds),
+    ]);
 
-    // Load all participants with profiles
-    const { data: allParticipants } = await supabase
-      .from("conversation_participants")
-      .select("*")
-      .in("conversation_id", conversationIds);
-
-    // Load profiles for participants
-    const allParticipantsList = (allParticipants ?? []) as ConversationParticipant[];
+    const convData = convResult.data;
+    const allParticipantsList = (allPartResult.data ?? []) as ConversationParticipant[];
     const userIds = [...new Set(allParticipantsList.map((p) => p.user_id))];
 
     const { data: profilesData } = await supabase
@@ -164,7 +158,7 @@ export function useMessages() {
         return;
       }
 
-      // Reload messages to show the sent message (don't rely only on realtime)
+      // Reload messages to guarantee visibility (real-time may also fire — dedup handles it)
       loadMessages(conversationId, { silent: true });
 
       // Update conversation last_message
@@ -270,7 +264,7 @@ export function useMessages() {
     [user]
   );
 
-  // Subscribe to real-time messages
+  // Subscribe to real-time messages for active conversation
   useEffect(() => {
     if (!activeConversationId) return;
     const supabase = getSupabaseBrowserClient();
@@ -291,13 +285,22 @@ export function useMessages() {
         },
         async (payload) => {
           const msg = payload.new as Message;
-          // Load sender profile
+          // Avoid duplicates (message we just sent)
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+          // Load sender profile and enrich
           const { data: profile } = await supabase
             .from("profiles")
             .select("id, username, display_name, avatar_url, bio, cover_url, location, website, date_of_birth, followers_count, following_count, posts_count, is_online, last_seen, created_at, updated_at")
             .eq("id", msg.sender_id)
             .single();
-          setMessages((prev) => [...prev, { ...msg, profiles: profile ?? undefined }]);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msg.id ? { ...m, profiles: profile ?? undefined } : m
+            )
+          );
         }
       )
       .subscribe();
@@ -308,6 +311,45 @@ export function useMessages() {
       supabase.removeChannel(channel);
     };
   }, [activeConversationId]);
+
+  // Subscribe to real-time conversation list updates (debounced)
+  useEffect(() => {
+    if (!user) return;
+    const supabase = getSupabaseBrowserClient();
+
+    const debouncedReload = () => {
+      if (convDebounceRef.current) clearTimeout(convDebounceRef.current);
+      convDebounceRef.current = setTimeout(() => loadConversations(), 500);
+    };
+
+    const channel = supabase
+      .channel(`conv-updates:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "conversations",
+        },
+        debouncedReload
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "conversation_participants",
+          filter: `user_id=eq.${user.id}`,
+        },
+        debouncedReload
+      )
+      .subscribe();
+
+    return () => {
+      if (convDebounceRef.current) clearTimeout(convDebounceRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [user, loadConversations]);
 
   useEffect(() => {
     if (user) {

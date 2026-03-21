@@ -156,8 +156,7 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
             className={cn(
               "w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-4 py-3",
               "text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]",
-              "resize-none focus:outline-none focus:border-[var(--accent-blue)]",
-              "focus:ring-2 focus:ring-[var(--accent-blue)]/20 transition-all duration-150",
+              "resize-none outline-none input-focus transition-all duration-150",
               "overflow-hidden"
             )}
           />

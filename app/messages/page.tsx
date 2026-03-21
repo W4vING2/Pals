@@ -8,6 +8,8 @@ import { useCalls } from "@/hooks/useCalls";
 import { useMessagesStore } from "@/lib/store";
 import { ConversationList } from "@/components/messenger/ConversationList";
 import { ChatWindow } from "@/components/messenger/ChatWindow";
+import { CreateGroup } from "@/components/messenger/CreateGroup";
+import { GroupSettings } from "@/components/messenger/GroupSettings";
 import { PageTransition } from "@/components/layout/PageTransition";
 import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,6 +33,8 @@ export default function MessagesPage() {
   // Read conversation ID from Zustand store (set before navigation) or URL
   const { pendingConversationId, setPendingConversationId } = useMessagesStore();
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [groupSettingsOpen, setGroupSettingsOpen] = useState(false);
   const processedRef = useRef<string | null>(null);
 
   // On mount: check URL for conversation param, or use pending from store
@@ -94,6 +98,13 @@ export default function MessagesPage() {
     await initiateCall(activeConv.id, other.user_id, type);
   };
 
+  const handleGroupCreated = (conversationId: string) => {
+    loadConversations().then(() => {
+      loadMessages(conversationId);
+      setMobileView("chat");
+    });
+  };
+
   if (authLoading) {
     return (
       <div className="h-[calc(100dvh-5rem)] lg:h-dvh flex items-center justify-center">
@@ -131,6 +142,7 @@ export default function MessagesPage() {
               activeId={activeConversationId}
               loading={loadingConversations}
               onSelect={handleSelectConversation}
+              onCreateGroup={() => setCreateGroupOpen(true)}
             />
           </div>
         </div>
@@ -162,9 +174,25 @@ export default function MessagesPage() {
             onSend={handleSend}
             onUploadImage={uploadMessageImage}
             onInitiateCall={handleInitiateCall}
+            onOpenGroupSettings={() => setGroupSettingsOpen(true)}
           />
         </div>
       </div>
+
+      <CreateGroup
+        open={createGroupOpen}
+        onClose={() => setCreateGroupOpen(false)}
+        onCreated={handleGroupCreated}
+      />
+
+      {activeConv?.is_group && (
+        <GroupSettings
+          open={groupSettingsOpen}
+          onClose={() => setGroupSettingsOpen(false)}
+          conversation={activeConv}
+          onUpdated={() => loadConversations()}
+        />
+      )}
     </PageTransition>
   );
 }

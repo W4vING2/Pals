@@ -138,7 +138,7 @@ export default function SearchPage() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search people or posts..."
-              className="w-full bg-[var(--bg-surface)] border border-[var(--border)] rounded-full pl-12 pr-10 py-3.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[var(--accent-blue)]/20 transition-all duration-200"
+              className="w-full bg-[var(--bg-surface)] border border-[var(--border)] rounded-full pl-12 pr-10 py-3.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none input-focus transition-all duration-200"
               autoFocus
             />
             {query && (
@@ -219,7 +219,7 @@ export default function SearchPage() {
                               className="w-10 h-10 rounded-full object-cover shrink-0"
                             />
                           ) : (
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
                               {(name ?? u.username)[0]?.toUpperCase()}
                             </div>
                           )}

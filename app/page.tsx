@@ -10,7 +10,6 @@ import { FeedList } from "@/components/feed/FeedList";
 import { CreatePost } from "@/components/feed/CreatePost";
 import { PageTransition } from "@/components/layout/PageTransition";
 import { Button } from "@/components/ui/Button";
-import { Skeleton } from "@/components/ui/Skeleton";
 import { cn } from "@/lib/utils";
 import type { Post } from "@/lib/supabase";
 
@@ -22,15 +21,20 @@ export default function FeedPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
-  const [page, setPage] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [newPostCount, setNewPostCount] = useState(0);
   const [fabVisible, setFabVisible] = useState(true);
   const lastScrollY = useRef(0);
 
+  // Use a ref to track page offset to avoid stale closure in loadPosts
+  const pageRef = useRef(0);
+  // Track user liked post IDs for batch checking
+  const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
+
   const loadPosts = useCallback(async (reset = false) => {
     const supabase = getSupabaseBrowserClient();
-    const from = reset ? 0 : page * PAGE_SIZE;
+    const currentPage = reset ? 0 : pageRef.current;
+    const from = currentPage * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
     setLoading(true);
@@ -41,17 +45,44 @@ export default function FeedPage() {
       .range(from, to);
 
     if (!error && data) {
+      const newPosts = data as Post[];
+
       if (reset) {
-        setPosts(data as Post[]);
-        setPage(1);
+        setPosts(newPosts);
+        pageRef.current = 1;
       } else {
-        setPosts((prev) => [...prev, ...(data as Post[])]);
-        setPage((p) => p + 1);
+        setPosts((prev) => {
+          // Deduplicate by id
+          const existingIds = new Set(prev.map((p) => p.id));
+          const unique = newPosts.filter((p) => !existingIds.has(p.id));
+          return [...prev, ...unique];
+        });
+        pageRef.current = currentPage + 1;
       }
-      setHasMore(data.length === PAGE_SIZE);
+      setHasMore(newPosts.length === PAGE_SIZE);
+
+      // Batch load like statuses for all loaded posts
+      if (user && newPosts.length > 0) {
+        const postIds = newPosts.map((p) => p.id);
+        const { data: likeData } = await supabase
+          .from("likes")
+          .select("post_id")
+          .eq("user_id", user.id)
+          .in("post_id", postIds);
+
+        if (likeData) {
+          const newLikedIds = new Set(likeData.map((l) => l.post_id));
+          setLikedPostIds((prev) => {
+            if (reset) return newLikedIds;
+            const merged = new Set(prev);
+            newLikedIds.forEach((id) => merged.add(id));
+            return merged;
+          });
+        }
+      }
     }
     setLoading(false);
-  }, [page]);
+  }, [user]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -65,7 +96,7 @@ export default function FeedPage() {
     }
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Real-time new posts
+  // Real-time new posts + like/comment count updates
   useEffect(() => {
     if (!user) return;
     const supabase = getSupabaseBrowserClient();
@@ -77,10 +108,64 @@ export default function FeedPage() {
         { event: "INSERT", schema: "public", table: "posts" },
         (payload) => {
           const newPost = payload.new as Post;
-          // Don't add own posts (they'll be refreshed on create)
           if (newPost.user_id !== user.id) {
             setNewPostCount((c) => c + 1);
           }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "likes" },
+        (payload) => {
+          const like = payload.new as { post_id: string; user_id: string };
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === like.post_id
+                ? { ...p, likes_count: (p.likes_count ?? 0) + 1 }
+                : p
+            )
+          );
+          // Update liked set if it's our like
+          if (like.user_id === user.id) {
+            setLikedPostIds((prev) => new Set(prev).add(like.post_id));
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "likes" },
+        (payload) => {
+          const like = payload.old as { post_id?: string; user_id?: string };
+          if (like.post_id) {
+            setPosts((prev) =>
+              prev.map((p) =>
+                p.id === like.post_id
+                  ? { ...p, likes_count: Math.max(0, (p.likes_count ?? 0) - 1) }
+                  : p
+              )
+            );
+            if (like.user_id === user.id) {
+              setLikedPostIds((prev) => {
+                const next = new Set(prev);
+                next.delete(like.post_id!);
+                return next;
+              });
+            }
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "comments" },
+        (payload) => {
+          const comment = payload.new as { post_id: string };
+          setPosts((prev) =>
+            prev.map((p) =>
+              p.id === comment.post_id
+                ? { ...p, comments_count: (p.comments_count ?? 0) + 1 }
+                : p
+            )
+          );
         }
       )
       .subscribe();
@@ -165,6 +250,7 @@ export default function FeedPage() {
           loading={loading}
           hasMore={hasMore}
           onLoadMore={() => loadPosts(false)}
+          likedPostIds={likedPostIds}
         />
 
         {/* Mobile FAB */}
@@ -173,7 +259,7 @@ export default function FeedPage() {
           className={cn(
             "fixed bottom-20 right-4 z-40 sm:hidden",
             "w-14 h-14 rounded-full shadow-lg",
-            "bg-gradient-to-br from-[var(--accent-blue)] to-blue-600",
+            "bg-gradient-to-br from-[var(--accent-blue)] to-purple-700",
             "text-white flex items-center justify-center",
             "active:scale-95 transition-shadow",
             "hover:shadow-xl"

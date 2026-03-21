@@ -55,6 +55,8 @@ export const useThemeStore = create<ThemeState>((set) => ({
 export type CallInfo = {
   callerId: string;
   callerProfile: Profile | null;
+  remoteUserId: string;
+  remoteProfile: Profile | null;
   conversationId: string;
   type: "voice" | "video";
   signal?: string;

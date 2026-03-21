@@ -3,9 +3,7 @@
 import React, { useEffect, useRef, useCallback } from "react";
 import { FileText } from "lucide-react";
 import { PostCard } from "./PostCard";
-import { AnimatedList } from "@/components/shared/AnimatedList";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { cn } from "@/lib/utils";
 import type { Post } from "@/lib/supabase";
 
 interface FeedListProps {
@@ -13,6 +11,7 @@ interface FeedListProps {
   loading: boolean;
   hasMore: boolean;
   onLoadMore: () => void;
+  likedPostIds?: Set<string>;
 }
 
 function PostSkeleton() {
@@ -43,7 +42,7 @@ function PostSkeleton() {
   );
 }
 
-export function FeedList({ posts, loading, hasMore, onLoadMore }: FeedListProps) {
+export function FeedList({ posts, loading, hasMore, onLoadMore, likedPostIds }: FeedListProps) {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const handleObserver = useCallback(
@@ -82,13 +81,14 @@ export function FeedList({ posts, loading, hasMore, onLoadMore }: FeedListProps)
 
   return (
     <div className="space-y-3">
-      {posts.length > 0 && (
-        <AnimatedList className="space-y-3">
-          {posts.map((post) => (
-            <PostCard key={post.id} post={post} />
-          ))}
-        </AnimatedList>
-      )}
+      {posts.map((post, idx) => (
+        <PostCard
+          key={post.id}
+          post={post}
+          initialLiked={likedPostIds?.has(post.id)}
+          priority={idx === 0 && !!post.image_url}
+        />
+      ))}
 
       {/* Loading skeletons */}
       {loading && (

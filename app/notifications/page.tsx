@@ -39,8 +39,8 @@ function NotificationIcon({ type }: { type: Notification["type"] }) {
       );
     case "comment":
       return (
-        <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
-          <MessageCircle className="w-4 h-4 text-blue-400" />
+        <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center shrink-0">
+          <MessageCircle className="w-4 h-4 text-purple-400" />
         </div>
       );
     case "follow":
@@ -184,7 +184,7 @@ export default function NotificationsPage() {
                       className="w-9 h-9 rounded-full object-cover shrink-0"
                     />
                   ) : (
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
                       {(
                         actorProfile?.display_name ??
                         actorProfile?.username ??
