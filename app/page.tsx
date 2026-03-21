@@ -1,12 +1,17 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { Plus, ArrowUp } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { FeedList } from "@/components/feed/FeedList";
 import { CreatePost } from "@/components/feed/CreatePost";
+import { PageTransition } from "@/components/layout/PageTransition";
 import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { cn } from "@/lib/utils";
 import type { Post } from "@/lib/supabase";
 
 const PAGE_SIZE = 10;
@@ -20,6 +25,8 @@ export default function FeedPage() {
   const [page, setPage] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [newPostCount, setNewPostCount] = useState(0);
+  const [fabVisible, setFabVisible] = useState(true);
+  const lastScrollY = useRef(0);
 
   const loadPosts = useCallback(async (reset = false) => {
     const supabase = getSupabaseBrowserClient();
@@ -83,6 +90,21 @@ export default function FeedPage() {
     };
   }, [user]);
 
+  // FAB hide/show on scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentY = window.scrollY;
+      if (currentY > lastScrollY.current && currentY > 100) {
+        setFabVisible(false);
+      } else {
+        setFabVisible(true);
+      }
+      lastScrollY.current = currentY;
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   const handleLoadNewPosts = () => {
     setNewPostCount(0);
     loadPosts(true);
@@ -91,7 +113,7 @@ export default function FeedPage() {
   if (authLoading) {
     return (
       <div className="min-h-dvh flex items-center justify-center">
-        <div className="w-10 h-10 rounded-full border-2 border-[var(--accent-blue)] border-t-transparent animate-spin-slow" />
+        <div className="w-10 h-10 rounded-full border-2 border-[var(--accent-blue)] border-t-transparent animate-spin" />
       </div>
     );
   }
@@ -99,40 +121,78 @@ export default function FeedPage() {
   if (!user) return null;
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold font-display text-[var(--text-primary)]">Feed</h1>
-        <Button onClick={() => setCreateOpen(true)} size="sm">
-          <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M8 2v12M2 8h12" />
-          </svg>
-          New Post
-        </Button>
-      </div>
+    <PageTransition>
+      <div className="max-w-2xl mx-auto px-4 py-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold font-display text-[var(--text-primary)]">Feed</h1>
+          {/* Desktop create button */}
+          <Button
+            onClick={() => setCreateOpen(true)}
+            size="sm"
+            className="hidden sm:inline-flex"
+          >
+            <Plus className="w-4 h-4" />
+            New Post
+          </Button>
+        </div>
 
-      {/* New posts banner */}
-      {newPostCount > 0 && (
-        <button
-          onClick={handleLoadNewPosts}
-          className="w-full mb-4 py-2.5 px-4 glass rounded-2xl text-sm font-medium text-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/10 transition-all duration-150 animate-slide-down"
+        {/* New posts banner */}
+        <AnimatePresence>
+          {newPostCount > 0 && (
+            <motion.button
+              initial={{ opacity: 0, y: -20, height: 0, marginBottom: 0 }}
+              animate={{ opacity: 1, y: 0, height: "auto", marginBottom: 16 }}
+              exit={{ opacity: 0, y: -20, height: 0, marginBottom: 0 }}
+              transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+              onClick={handleLoadNewPosts}
+              className={cn(
+                "w-full py-2.5 px-4 rounded-2xl text-sm font-medium",
+                "text-[var(--accent-blue)] bg-[var(--accent-blue)]/10",
+                "hover:bg-[var(--accent-blue)]/15 transition-colors",
+                "border border-[var(--accent-blue)]/20",
+                "flex items-center justify-center gap-2"
+              )}
+            >
+              <ArrowUp className="w-4 h-4" />
+              {newPostCount} new {newPostCount === 1 ? "post" : "posts"} — tap to refresh
+            </motion.button>
+          )}
+        </AnimatePresence>
+
+        <FeedList
+          posts={posts}
+          loading={loading}
+          hasMore={hasMore}
+          onLoadMore={() => loadPosts(false)}
+        />
+
+        {/* Mobile FAB */}
+        <motion.button
+          onClick={() => setCreateOpen(true)}
+          className={cn(
+            "fixed bottom-20 right-4 z-40 sm:hidden",
+            "w-14 h-14 rounded-full shadow-lg",
+            "bg-gradient-to-br from-[var(--accent-blue)] to-blue-600",
+            "text-white flex items-center justify-center",
+            "active:scale-95 transition-shadow",
+            "hover:shadow-xl"
+          )}
+          animate={{
+            scale: fabVisible ? 1 : 0,
+            opacity: fabVisible ? 1 : 0,
+          }}
+          transition={{ duration: 0.2, ease: "easeInOut" }}
         >
-          ↑ {newPostCount} new {newPostCount === 1 ? "post" : "posts"} — tap to refresh
-        </button>
-      )}
+          <Plus className="w-6 h-6" />
+        </motion.button>
 
-      <FeedList
-        posts={posts}
-        loading={loading}
-        hasMore={hasMore}
-        onLoadMore={() => loadPosts(false)}
-      />
-
-      <CreatePost
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreated={() => loadPosts(true)}
-      />
-    </div>
+        <CreatePost
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          onCreated={() => loadPosts(true)}
+        />
+      </div>
+    </PageTransition>
   );
 }

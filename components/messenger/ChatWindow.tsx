@@ -1,9 +1,16 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Phone,
+  Video,
+  Paperclip,
+  SendHorizontal,
+  MessageSquare,
+} from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
-import { SkeletonMessage } from "@/components/ui/Skeleton";
-import { Avatar } from "@/components/ui/Avatar";
+import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/store";
 import type { ConversationWithDetails } from "@/hooks/useMessages";
 import type { Message } from "@/lib/supabase";
@@ -15,6 +22,30 @@ interface ChatWindowProps {
   onSend: (content: string, imageUrl?: string) => Promise<void>;
   onUploadImage: (file: File) => Promise<string | null>;
   onInitiateCall?: (type: "voice" | "video") => void;
+}
+
+function SkeletonMessages() {
+  return (
+    <div className="space-y-4 p-4">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div
+          key={i}
+          className={cn(
+            "flex gap-2",
+            i % 3 === 0 ? "flex-row-reverse" : "flex-row"
+          )}
+        >
+          <div className="w-7 h-7 rounded-full bg-[var(--bg-elevated)] animate-pulse shrink-0" />
+          <div
+            className={cn(
+              "h-10 rounded-2xl bg-[var(--bg-elevated)] animate-pulse",
+              i % 2 === 0 ? "w-48" : "w-32"
+            )}
+          />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function ChatWindow({
@@ -29,26 +60,39 @@ export function ChatWindow({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [justSent, setJustSent] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
+
+  // Prevent textarea from auto-focusing on mobile (opens keyboard)
+  useEffect(() => {
+    const isMobile = window.innerWidth < 1024;
+    if (isMobile) {
+      const el = document.activeElement as HTMLElement | null;
+      if (el?.tagName === "TEXTAREA") el.blur();
+    }
+  }, [conversation]);
 
   const otherParticipant = conversation?.participants.find(
     (p) => p.user_id !== user?.id
   );
   const otherProfile = otherParticipant?.profiles;
-  const otherName = otherProfile?.display_name ?? otherProfile?.username ?? "Unknown";
+  const otherName =
+    otherProfile?.display_name ?? otherProfile?.username ?? "Unknown";
 
   const handleSend = async () => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
     setSending(true);
     setText("");
+    setJustSent(true);
     await onSend(trimmed);
     setSending(false);
+    setTimeout(() => setJustSent(false), 300);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -58,7 +102,9 @@ export function ChatWindow({
     }
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
@@ -70,15 +116,18 @@ export function ChatWindow({
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  if (!conversation) {
+  // Show placeholder only when no conversation is selected AND no messages are loaded
+  if (!conversation && messages.length === 0 && !loading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center p-8">
-        <svg className="w-16 h-16 text-[var(--text-secondary)]/20" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <path d="M56 40a8 8 0 01-8 8H18L8 58V16a8 8 0 018-8h32a8 8 0 018 8v24z" />
-        </svg>
+        <MessageSquare className="w-16 h-16 text-[var(--text-secondary)] opacity-20" />
         <div>
-          <p className="font-semibold text-[var(--text-primary)]">Select a conversation</p>
-          <p className="text-sm text-[var(--text-secondary)] mt-1">Choose a chat from the left to start messaging</p>
+          <p className="font-semibold text-[var(--text-primary)]">
+            Select a conversation
+          </p>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">
+            Choose a chat from the left to start messaging
+          </p>
         </div>
       </div>
     );
@@ -87,12 +136,26 @@ export function ChatWindow({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] bg-[var(--bg-surface)]">
-        <Avatar src={otherProfile?.avatar_url} name={otherName} size="sm" />
+      {conversation && <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)] bg-[var(--bg-surface)]">
+        {otherProfile?.avatar_url ? (
+          <img
+            src={otherProfile.avatar_url}
+            alt={otherName}
+            className="w-9 h-9 rounded-full object-cover shrink-0"
+          />
+        ) : (
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
+            {otherName[0]?.toUpperCase()}
+          </div>
+        )}
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm text-[var(--text-primary)] truncate">{otherName}</p>
+          <p className="font-semibold text-sm text-[var(--text-primary)] truncate">
+            {otherName}
+          </p>
           {otherProfile?.username && (
-            <p className="text-xs text-[var(--text-secondary)]">@{otherProfile.username}</p>
+            <p className="text-xs text-[var(--text-secondary)]">
+              @{otherProfile.username}
+            </p>
           )}
         </div>
 
@@ -104,31 +167,28 @@ export function ChatWindow({
               className="w-9 h-9 rounded-xl flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)] transition-all duration-150"
               aria-label="Voice call"
             >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z" />
-              </svg>
+              <Phone className="w-5 h-5" />
             </button>
             <button
               onClick={() => onInitiateCall("video")}
               className="w-9 h-9 rounded-xl flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)] transition-all duration-150"
               aria-label="Video call"
             >
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="23 7 16 12 23 17 23 7" />
-                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-              </svg>
+              <Video className="w-5 h-5" />
             </button>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto py-4 px-4 space-y-2">
         {loading ? (
-          <SkeletonMessage />
+          <SkeletonMessages />
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
-            <p className="text-sm text-[var(--text-secondary)]">No messages yet. Say hello! 👋</p>
+            <p className="text-sm text-[var(--text-secondary)]">
+              No messages yet. Say hello!
+            </p>
           </div>
         ) : (
           messages.map((msg, idx) => {
@@ -150,8 +210,8 @@ export function ChatWindow({
       </div>
 
       {/* Input area */}
-      <div className="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-surface)]">
-        <div className="flex items-end gap-2 bg-[var(--bg-input)] border border-[var(--border)] rounded-3xl px-4 py-3 focus-within:border-[var(--accent-blue)] transition-colors">
+      <div className="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-surface)]/80 backdrop-blur-xl">
+        <div className="flex items-end gap-2 bg-[var(--bg-input)] border border-[var(--border)] rounded-full px-4 py-2.5">
           {/* Image upload */}
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -159,11 +219,7 @@ export function ChatWindow({
             className="text-[var(--text-secondary)] hover:text-[var(--accent-blue)] transition-colors shrink-0 mb-0.5"
             aria-label="Upload image"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <polyline points="21 15 16 10 5 21" />
-            </svg>
+            <Paperclip className="w-5 h-5" />
           </button>
           <input
             ref={fileInputRef}
@@ -178,28 +234,32 @@ export function ChatWindow({
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Message…"
+            placeholder="Message..."
             rows={1}
             className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] resize-none outline-none max-h-32 leading-relaxed"
             style={{ minHeight: "20px" }}
           />
 
           {/* Send */}
-          <button
+          <motion.button
             onClick={handleSend}
             disabled={!text.trim() || sending}
-            className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 active:scale-95 mb-0.5 ${
+            animate={
+              justSent
+                ? { rotate: [0, -15, 15, 0], scale: [1, 1.15, 1] }
+                : { rotate: 0, scale: 1 }
+            }
+            transition={{ duration: 0.3 }}
+            className={cn(
+              "shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 mb-0.5",
               text.trim()
                 ? "bg-[var(--accent-blue)] text-white hover:bg-[var(--accent-blue-hover)]"
                 : "text-[var(--text-secondary)]"
-            }`}
+            )}
             aria-label="Send"
           >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
-          </button>
+            <SendHorizontal className="w-4 h-4" />
+          </motion.button>
         </div>
       </div>
     </div>

@@ -1,8 +1,11 @@
 "use client";
 
 import React, { useEffect, useRef, useCallback } from "react";
+import { FileText } from "lucide-react";
 import { PostCard } from "./PostCard";
-import { SkeletonCard } from "@/components/ui/Skeleton";
+import { AnimatedList } from "@/components/shared/AnimatedList";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { cn } from "@/lib/utils";
 import type { Post } from "@/lib/supabase";
 
 interface FeedListProps {
@@ -10,6 +13,34 @@ interface FeedListProps {
   loading: boolean;
   hasMore: boolean;
   onLoadMore: () => void;
+}
+
+function PostSkeleton() {
+  return (
+    <div className="rounded-2xl bg-[var(--bg-surface)] border border-[var(--border)] p-4 space-y-3">
+      {/* Header skeleton */}
+      <div className="flex items-center gap-3">
+        <Skeleton className="w-8 h-8 rounded-full" />
+        <div className="flex-1 space-y-1.5">
+          <Skeleton className="h-3.5 w-28 rounded" />
+          <Skeleton className="h-3 w-16 rounded" />
+        </div>
+      </div>
+      {/* Content skeleton */}
+      <div className="space-y-2">
+        <Skeleton className="h-3.5 w-full rounded" />
+        <Skeleton className="h-3.5 w-3/4 rounded" />
+      </div>
+      {/* Image skeleton */}
+      <Skeleton className="h-44 w-full rounded-xl" />
+      {/* Actions skeleton */}
+      <div className="flex items-center gap-3 pt-1">
+        <Skeleton className="h-7 w-16 rounded-xl" />
+        <Skeleton className="h-7 w-16 rounded-xl" />
+        <Skeleton className="h-7 w-10 rounded-xl ml-auto" />
+      </div>
+    </div>
+  );
 }
 
 export function FeedList({ posts, loading, hasMore, onLoadMore }: FeedListProps) {
@@ -36,12 +67,9 @@ export function FeedList({ posts, loading, hasMore, onLoadMore }: FeedListProps)
   if (!loading && posts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-        <svg className="w-16 h-16 text-[var(--text-secondary)]/30" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <circle cx="32" cy="32" r="28" />
-          <path d="M20 38s4-6 12-6 12 6 12 6" />
-          <circle cx="24" cy="26" r="2" fill="currentColor" />
-          <circle cx="40" cy="26" r="2" fill="currentColor" />
-        </svg>
+        <div className="w-16 h-16 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border)] flex items-center justify-center">
+          <FileText className="w-8 h-8 text-[var(--text-secondary)] opacity-40" />
+        </div>
         <div>
           <p className="font-semibold text-[var(--text-primary)]">Nothing here yet</p>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
@@ -53,19 +81,21 @@ export function FeedList({ posts, loading, hasMore, onLoadMore }: FeedListProps)
   }
 
   return (
-    <div className="space-y-4">
-      {posts.map((post) => (
-        <div key={post.id} className="animate-slide-up">
-          <PostCard post={post} />
-        </div>
-      ))}
+    <div className="space-y-3">
+      {posts.length > 0 && (
+        <AnimatedList className="space-y-3">
+          {posts.map((post) => (
+            <PostCard key={post.id} post={post} />
+          ))}
+        </AnimatedList>
+      )}
 
       {/* Loading skeletons */}
       {loading && (
-        <div className="space-y-4">
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
+        <div className="space-y-3">
+          <PostSkeleton />
+          <PostSkeleton />
+          <PostSkeleton />
         </div>
       )}
 

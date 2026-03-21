@@ -2,15 +2,31 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { motion } from "framer-motion";
+import { Search, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
-import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
-import { SkeletonUserResult } from "@/components/ui/Skeleton";
 import { PostCard } from "@/components/feed/PostCard";
+import { PageTransition } from "@/components/layout/PageTransition";
+import { AnimatedList } from "@/components/shared/AnimatedList";
+import { cn } from "@/lib/utils";
 import type { Profile, Post } from "@/lib/supabase";
 import { useAuthStore } from "@/lib/store";
-import Link from "next/link";
+
+function SkeletonUserRow() {
+  return (
+    <div className="flex items-center gap-3 p-4">
+      <div className="w-10 h-10 rounded-full bg-[var(--bg-elevated)] animate-pulse shrink-0" />
+      <div className="flex-1 space-y-2">
+        <div className="h-3.5 w-32 rounded bg-[var(--bg-elevated)] animate-pulse" />
+        <div className="h-3 w-20 rounded bg-[var(--bg-elevated)] animate-pulse" />
+      </div>
+      <div className="h-7 w-16 rounded-lg bg-[var(--bg-elevated)] animate-pulse" />
+    </div>
+  );
+}
 
 export default function SearchPage() {
   const router = useRouter();
@@ -51,7 +67,21 @@ export default function SearchPage() {
         .limit(10),
     ]);
 
-    if (usersResult.data) setUsers(usersResult.data as Profile[]);
+    if (usersResult.data) {
+      setUsers(usersResult.data as Profile[]);
+      // Load follow status for found users
+      if (storeUser && usersResult.data.length > 0) {
+        const ids = usersResult.data.map((u: { id: string }) => u.id);
+        const { data: followData } = await supabase
+          .from("follows")
+          .select("following_id")
+          .eq("follower_id", storeUser.id)
+          .in("following_id", ids);
+        if (followData) {
+          setFollowed(new Set(followData.map((f) => f.following_id)));
+        }
+      }
+    }
     if (postsResult.data) setPosts(postsResult.data as Post[]);
     setLoading(false);
   }, []);
@@ -87,139 +117,155 @@ export default function SearchPage() {
     }
   };
 
-  const showEmpty = !loading && query && users.length === 0 && posts.length === 0;
+  const showEmpty =
+    !loading && query && users.length === 0 && posts.length === 0;
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
-      {/* Sticky search bar */}
-      <div className="sticky top-0 z-10 pb-4 bg-[var(--bg-base)]">
-        <h1 className="text-2xl font-bold font-display text-[var(--text-primary)] mb-4">Search</h1>
-        <div className="relative">
-          <svg
-            className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)]"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
+    <PageTransition>
+      <div className="max-w-2xl mx-auto px-4 py-6">
+        {/* Sticky search bar */}
+        <div className="sticky top-0 z-10 pb-4 bg-[var(--bg-base)]">
+          <h1 className="text-2xl font-bold font-display text-[var(--text-primary)] mb-4">
+            Search
+          </h1>
+          <motion.div
+            className="relative"
+            initial={false}
           >
-            <circle cx="11" cy="11" r="7" />
-            <path d="M21 21l-4-4" />
-          </svg>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search people or posts…"
-            className="w-full bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl pl-12 pr-4 py-3.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[var(--accent-blue)]/20 transition-all duration-150"
-            autoFocus
-          />
-          {query && (
-            <button
-              onClick={() => setQuery("")}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <path d="M2 2l12 12M14 2L2 14" />
-              </svg>
-            </button>
-          )}
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-secondary)]" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search people or posts..."
+              className="w-full bg-[var(--bg-surface)] border border-[var(--border)] rounded-full pl-12 pr-10 py-3.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent-blue)] focus:ring-2 focus:ring-[var(--accent-blue)]/20 transition-all duration-200"
+              autoFocus
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </motion.div>
         </div>
-      </div>
 
-      {/* Loading */}
-      {loading && (
-        <div className="space-y-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <SkeletonUserResult key={i} />
-          ))}
-        </div>
-      )}
-
-      {/* Empty state */}
-      {showEmpty && (
-        <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-          <svg className="w-20 h-20 text-[var(--text-secondary)]/20" viewBox="0 0 80 80" fill="none">
-            <circle cx="36" cy="36" r="26" stroke="currentColor" strokeWidth="3" />
-            <path d="M56 56l14 14" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-            <path d="M26 36h20M36 26v20" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-          </svg>
-          <div>
-            <p className="font-semibold text-[var(--text-primary)]">No results for &ldquo;{query}&rdquo;</p>
-            <p className="text-sm text-[var(--text-secondary)] mt-1">Try a different search term</p>
+        {/* Loading */}
+        {loading && (
+          <div className="space-y-1 bg-[var(--bg-surface)] rounded-3xl border border-[var(--border)] overflow-hidden">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <SkeletonUserRow key={i} />
+            ))}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* No query — hint */}
-      {!query && !loading && (
-        <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-          <svg className="w-16 h-16 text-[var(--text-secondary)]/20" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <circle cx="28" cy="28" r="18" />
-            <path d="M42 42l14 14" strokeLinecap="round" />
-          </svg>
-          <p className="text-[var(--text-secondary)] text-sm">Search for people and posts</p>
-        </div>
-      )}
+        {/* Empty state */}
+        {showEmpty && (
+          <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+            <Search className="w-20 h-20 text-[var(--text-secondary)] opacity-20" />
+            <div>
+              <p className="font-semibold text-[var(--text-primary)]">
+                No results for &ldquo;{query}&rdquo;
+              </p>
+              <p className="text-sm text-[var(--text-secondary)] mt-1">
+                Try a different search term
+              </p>
+            </div>
+          </div>
+        )}
 
-      {/* Results */}
-      {!loading && (users.length > 0 || posts.length > 0) && (
-        <div className="space-y-6">
-          {/* User results */}
-          {users.length > 0 && (
-            <section>
-              <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-                People
-              </h2>
-              <div className="space-y-1 bg-[var(--bg-surface)] rounded-3xl border border-[var(--border)] overflow-hidden">
-                {users.map((u, idx) => {
-                  const name = u.display_name ?? u.username;
-                  const isOwn = u.id === storeUser?.id;
-                  return (
-                    <div
-                      key={u.id}
-                      className={`flex items-center gap-3 p-4 hover:bg-[var(--bg-elevated)] transition-colors ${
-                        idx < users.length - 1 ? "border-b border-[var(--border)]" : ""
-                      }`}
-                    >
-                      <Link href={`/profile/${u.username}`} className="flex items-center gap-3 flex-1 min-w-0">
-                        <Avatar src={u.avatar_url} name={name} size="md" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{name}</p>
-                          <p className="text-xs text-[var(--text-secondary)]">@{u.username}</p>
-                        </div>
-                      </Link>
-                      {!isOwn && (
-                        <Button
-                          variant={followed.has(u.id) ? "secondary" : "primary"}
-                          size="sm"
-                          onClick={() => toggleFollow(u.id)}
+        {/* No query -- hint */}
+        {!query && !loading && (
+          <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+            <Search className="w-16 h-16 text-[var(--text-secondary)] opacity-20" />
+            <p className="text-[var(--text-secondary)] text-sm">
+              Find your people
+            </p>
+          </div>
+        )}
+
+        {/* Results */}
+        {!loading && (users.length > 0 || posts.length > 0) && (
+          <div className="space-y-6">
+            {/* User results */}
+            {users.length > 0 && (
+              <section>
+                <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
+                  People
+                </h2>
+                <AnimatedList className="space-y-0 bg-[var(--bg-surface)] rounded-3xl border border-[var(--border)] overflow-hidden">
+                  {users.map((u, idx) => {
+                    const name = u.display_name ?? u.username;
+                    const isOwn = u.id === storeUser?.id;
+                    return (
+                      <div
+                        key={u.id}
+                        className={cn(
+                          "flex items-center gap-3 p-4 hover:bg-[var(--bg-elevated)] transition-colors",
+                          idx < users.length - 1 &&
+                            "border-b border-[var(--border)]"
+                        )}
+                      >
+                        <Link
+                          href={`/profile/${u.username}`}
+                          className="flex items-center gap-3 flex-1 min-w-0"
                         >
-                          {followed.has(u.id) ? "Following" : "Follow"}
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          )}
+                          {u.avatar_url ? (
+                            <img
+                              src={u.avatar_url}
+                              alt={name ?? u.username}
+                              className="w-10 h-10 rounded-full object-cover shrink-0"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                              {(name ?? u.username)[0]?.toUpperCase()}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-[var(--text-primary)] truncate">
+                              {name}
+                            </p>
+                            <p className="text-xs text-[var(--text-secondary)]">
+                              @{u.username}
+                            </p>
+                          </div>
+                        </Link>
+                        {!isOwn && (
+                          <Button
+                            variant={
+                              followed.has(u.id) ? "secondary" : "default"
+                            }
+                            size="sm"
+                            onClick={() => toggleFollow(u.id)}
+                          >
+                            {followed.has(u.id) ? "Following" : "Follow"}
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </AnimatedList>
+              </section>
+            )}
 
-          {/* Post results */}
-          {posts.length > 0 && (
-            <section>
-              <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-                Posts
-              </h2>
-              <div className="space-y-4">
-                {posts.map((post) => (
-                  <PostCard key={post.id} post={post} />
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-      )}
-    </div>
+            {/* Post results */}
+            {posts.length > 0 && (
+              <section>
+                <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
+                  Posts
+                </h2>
+                <AnimatedList className="space-y-4">
+                  {posts.map((post) => (
+                    <PostCard key={post.id} post={post} />
+                  ))}
+                </AnimatedList>
+              </section>
+            )}
+          </div>
+        )}
+      </div>
+    </PageTransition>
   );
 }

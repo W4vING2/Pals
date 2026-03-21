@@ -41,6 +41,7 @@ export function useMessages() {
 
     const participantsData = (rawData ?? []) as ConversationParticipant[];
     if (participantsData.length === 0) {
+      setConversations([]);
       setLoadingConversations(false);
       return;
     }
@@ -102,8 +103,8 @@ export function useMessages() {
     setLoadingConversations(false);
   }, [user]);
 
-  const loadMessages = useCallback(async (conversationId: string) => {
-    setLoadingMessages(true);
+  const loadMessages = useCallback(async (conversationId: string, options?: { silent?: boolean }) => {
+    if (!options?.silent) setLoadingMessages(true);
     setActiveConversationId(conversationId);
     const supabase = getSupabaseBrowserClient();
 
@@ -114,19 +115,25 @@ export function useMessages() {
       .order("created_at", { ascending: true });
 
     if (!error && data) {
-      // Enrich with sender profiles
       const msgs = data as Message[];
-      const senderIds = [...new Set(msgs.map((m) => m.sender_id))];
-      const { data: profilesData } = await supabase
-        .from("profiles")
-        .select("id, username, display_name, avatar_url")
-        .in("id", senderIds);
-      const profilesMap = new Map((profilesData ?? []).map((p) => [p.id, p]));
-      const enriched: Message[] = msgs.map((m) => ({
-        ...m,
-        profiles: profilesMap.get(m.sender_id) as Message["profiles"],
-      }));
-      setMessages(enriched);
+      if (msgs.length === 0) {
+        setMessages([]);
+      } else {
+        // Enrich with sender profiles
+        const senderIds = [...new Set(msgs.map((m) => m.sender_id))];
+        const { data: profilesData } = await supabase
+          .from("profiles")
+          .select("id, username, display_name, avatar_url")
+          .in("id", senderIds);
+        const profilesMap = new Map((profilesData ?? []).map((p) => [p.id, p]));
+        const enriched: Message[] = msgs.map((m) => ({
+          ...m,
+          profiles: profilesMap.get(m.sender_id) as Message["profiles"],
+        }));
+        setMessages(enriched);
+      }
+    } else {
+      setMessages([]);
     }
     setLoadingMessages(false);
 
@@ -157,6 +164,9 @@ export function useMessages() {
         return;
       }
 
+      // Reload messages to show the sent message (don't rely only on realtime)
+      loadMessages(conversationId, { silent: true });
+
       // Update conversation last_message
       await supabase
         .from("conversations")
@@ -172,7 +182,7 @@ export function useMessages() {
         p_sender_id: user.id,
       });
     },
-    [user]
+    [user, loadMessages]
   );
 
   const uploadMessageImage = useCallback(async (file: File): Promise<string | null> => {
@@ -199,41 +209,63 @@ export function useMessages() {
       if (!user) return null;
       const supabase = getSupabaseBrowserClient();
 
-      // Check for existing conversation
-      const { data: existing } = await supabase
+      // Find existing conversation: get my conversations, then check
+      // which ones have the other user as participant.
+      // RLS only allows seeing own rows, so we query our own participations
+      // and load ALL participants for those conversations.
+      const { data: myParticipations } = await supabase
         .from("conversation_participants")
         .select("conversation_id")
         .eq("user_id", user.id);
 
-      if (existing && existing.length > 0) {
-        const myConvIds = existing.map((e) => e.conversation_id);
-        const { data: shared } = await supabase
+      if (myParticipations && myParticipations.length > 0) {
+        const myConvIds = myParticipations.map((p) => p.conversation_id);
+
+        // Load all participants in my conversations (RLS allows seeing
+        // participants of conversations you belong to)
+        const { data: allParticipants } = await supabase
           .from("conversation_participants")
-          .select("conversation_id")
-          .eq("user_id", otherUserId)
+          .select("conversation_id, user_id")
           .in("conversation_id", myConvIds);
 
-        if (shared && shared.length > 0) {
-          return shared[0].conversation_id;
+        if (allParticipants) {
+          const sharedConv = allParticipants.find(
+            (p) => p.user_id === otherUserId
+          );
+          if (sharedConv) {
+            return sharedConv.conversation_id;
+          }
         }
       }
 
-      // Create new conversation
-      const { data: conv, error } = await supabase
+      // Create new conversation with client-generated UUID
+      // (avoids RLS issue: after insert, .select() fails because
+      // you're not yet a participant of the conversation)
+      const convId = crypto.randomUUID();
+
+      const { error: convError } = await supabase
         .from("conversations")
-        .insert({ last_message: null })
-        .select()
-        .single();
+        .insert({ id: convId, last_message: null } as Record<string, unknown>);
 
-      if (error || !conv) return null;
+      if (convError) {
+        console.error("Error creating conversation:", convError);
+        return null;
+      }
 
-      const convTyped = conv as Conversation;
-      await supabase.from("conversation_participants").insert([
-        { conversation_id: convTyped.id, user_id: user.id, unread_count: 0 },
-        { conversation_id: convTyped.id, user_id: otherUserId, unread_count: 0 },
-      ]);
+      // Add both participants — now the conversation becomes visible via RLS
+      const { error: partError } = await supabase
+        .from("conversation_participants")
+        .insert([
+          { conversation_id: convId, user_id: user.id, unread_count: 0 },
+          { conversation_id: convId, user_id: otherUserId, unread_count: 0 },
+        ]);
 
-      return convTyped.id;
+      if (partError) {
+        console.error("Error adding participants:", partError);
+        return null;
+      }
+
+      return convId;
     },
     [user]
   );

@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { Avatar } from "@/components/ui/Avatar";
-import { SkeletonConversation } from "@/components/ui/Skeleton";
+import { motion, AnimatePresence } from "framer-motion";
+import { Search, MessageSquare } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 import type { ConversationWithDetails } from "@/hooks/useMessages";
 import { useAuthStore } from "@/lib/store";
 
@@ -22,6 +24,18 @@ function timeAgo(dateStr: string | null): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
+}
+
+function SkeletonItem() {
+  return (
+    <div className="flex items-center gap-3 p-4">
+      <div className="w-10 h-10 rounded-full bg-[var(--bg-elevated)] animate-pulse shrink-0" />
+      <div className="flex-1 space-y-2">
+        <div className="h-3.5 w-28 rounded bg-[var(--bg-elevated)] animate-pulse" />
+        <div className="h-3 w-40 rounded bg-[var(--bg-elevated)] animate-pulse" />
+      </div>
+    </div>
+  );
 }
 
 export function ConversationList({
@@ -46,58 +60,74 @@ export function ConversationList({
       {/* Search */}
       <div className="p-3 border-b border-[var(--border)]">
         <div className="relative">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <circle cx="11" cy="11" r="7" />
-            <path d="M21 21l-4-4" />
-          </svg>
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)]" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search conversations…"
-            className="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-2xl pl-9 pr-4 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent-blue)] transition-colors"
+            placeholder="Search conversations..."
+            className="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-full pl-9 pr-4 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent-blue)] transition-colors"
           />
         </div>
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto">
+      <ScrollArea className="flex-1 overflow-hidden">
         {loading ? (
-          Array.from({ length: 5 }).map((_, i) => <SkeletonConversation key={i} />)
+          Array.from({ length: 5 }).map((_, i) => <SkeletonItem key={i} />)
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-2 text-center px-4">
-            <svg className="w-10 h-10 text-[var(--text-secondary)]/30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
-            </svg>
+            <MessageSquare className="w-10 h-10 text-[var(--text-secondary)] opacity-30" />
             <p className="text-sm text-[var(--text-secondary)]">
               {search ? "No conversations found" : "No conversations yet"}
             </p>
           </div>
         ) : (
           filtered.map((conv) => {
-            const other = conv.participants.find((p) => p.user_id !== user?.id);
+            const other = conv.participants.find(
+              (p) => p.user_id !== user?.id
+            );
             const otherProfile = other?.profiles;
             const name =
-              otherProfile?.display_name ?? otherProfile?.username ?? "Unknown";
+              otherProfile?.display_name ??
+              otherProfile?.username ??
+              "Unknown";
             const isActive = conv.id === activeId;
 
             return (
-              <button
+              <motion.button
                 key={conv.id}
                 onClick={() => onSelect(conv.id)}
-                className={`w-full flex items-center gap-3 p-4 hover:bg-[var(--bg-elevated)] transition-all duration-150 text-left ${
-                  isActive ? "bg-[var(--accent-blue)]/10 border-r-2 border-[var(--accent-blue)]" : ""
-                }`}
+                whileTap={{ scale: 0.98 }}
+                className={cn(
+                  "w-full flex items-center gap-3 p-4 transition-all duration-150 text-left",
+                  "hover:bg-[var(--bg-elevated)]",
+                  isActive &&
+                    "bg-[var(--bg-elevated)] border-l-2 border-l-[var(--accent-blue)]"
+                )}
               >
                 <div className="shrink-0">
-                  <Avatar
-                    src={otherProfile?.avatar_url}
-                    name={name}
-                    size="md"
-                  />
+                  {otherProfile?.avatar_url ? (
+                    <img
+                      src={otherProfile.avatar_url}
+                      alt={name}
+                      className="w-10 h-10 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white text-sm font-semibold">
+                      {name[0]?.toUpperCase()}
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <p className={`text-sm font-semibold truncate ${isActive ? "text-[var(--accent-blue)]" : "text-[var(--text-primary)]"}`}>
+                    <p
+                      className={cn(
+                        "text-sm font-semibold truncate",
+                        isActive
+                          ? "text-[var(--accent-blue)]"
+                          : "text-[var(--text-primary)]"
+                      )}
+                    >
                       {name}
                     </p>
                     <span className="text-[10px] text-[var(--text-secondary)] shrink-0">
@@ -108,18 +138,32 @@ export function ConversationList({
                     <p className="text-xs text-[var(--text-secondary)] truncate">
                       {conv.last_message ?? "No messages yet"}
                     </p>
-                    {conv.unread_count > 0 && (
-                      <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-[var(--accent-blue)] text-white text-[10px] font-bold flex items-center justify-center">
-                        {conv.unread_count > 99 ? "99+" : conv.unread_count}
-                      </span>
-                    )}
+                    <AnimatePresence>
+                      {conv.unread_count > 0 && (
+                        <motion.span
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          exit={{ scale: 0 }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 500,
+                            damping: 25,
+                          }}
+                          className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-[var(--accent-blue)] text-white text-[10px] font-bold flex items-center justify-center"
+                        >
+                          {conv.unread_count > 99
+                            ? "99+"
+                            : conv.unread_count}
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
                   </div>
                 </div>
-              </button>
+              </motion.button>
             );
           })
         )}
-      </div>
+      </ScrollArea>
     </div>
   );
 }

@@ -1,21 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans, Syne, Geist } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
-import { ThemeProvider } from "@/components/ThemeProvider";
-import { NavWrapper } from "@/components/nav/NavWrapper";
+import { AppShell } from "@/components/layout/AppShell";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
-
-const plusJakarta = Plus_Jakarta_Sans({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-plus-jakarta",
-  display: "swap",
-});
-
-const syne = Syne({
-  subsets: ["latin"],
-  variable: "--font-syne",
+  variable: "--font-sans",
   display: "swap",
 });
 
@@ -34,7 +26,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  themeColor: "#4f8ef7",
+  themeColor: "#1a6dff",
 };
 
 export default function RootLayout({
@@ -45,13 +37,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      data-theme="dark"
-      className={cn("h-full", plusJakarta.variable, syne.variable, "font-sans", geist.variable)}
+      className={cn("dark h-full", inter.variable)}
+      data-scroll-behavior="smooth"
     >
       <body className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)] antialiased">
-        <ThemeProvider>
-          <NavWrapper>{children}</NavWrapper>
-        </ThemeProvider>
+        <TooltipProvider delay={300}>
+          <AppShell>{children}</AppShell>
+        </TooltipProvider>
       </body>
     </html>
   );

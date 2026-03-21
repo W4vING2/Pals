@@ -76,6 +76,30 @@ export const useCallStore = create<CallState>((set) => ({
   endCall: () => set({ incomingCall: null, activeCall: null }),
 }));
 
+// ── Create Post Store ─────────────────────────────────────
+
+type CreatePostState = {
+  open: boolean;
+  setOpen: (open: boolean) => void;
+};
+
+export const useCreatePostStore = create<CreatePostState>((set) => ({
+  open: false,
+  setOpen: (open) => set({ open }),
+}));
+
+// ── Messages Store ────────────────────────────────────────
+
+type MessagesStoreState = {
+  pendingConversationId: string | null;
+  setPendingConversationId: (id: string | null) => void;
+};
+
+export const useMessagesStore = create<MessagesStoreState>((set) => ({
+  pendingConversationId: null,
+  setPendingConversationId: (id) => set({ pendingConversationId: id }),
+}));
+
 // ── Notification Store ─────────────────────────────────────
 
 type NotificationState = {

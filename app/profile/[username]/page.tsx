@@ -5,13 +5,46 @@ import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/hooks/useMessages";
+import { useMessagesStore } from "@/lib/store";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { PostGrid } from "@/components/profile/PostGrid";
-import { SkeletonProfile } from "@/components/ui/Skeleton";
+import { PageTransition } from "@/components/layout/PageTransition";
+import { Skeleton } from "@/components/ui/Skeleton";
 import type { Profile, Post } from "@/lib/supabase";
 
 interface ProfilePageProps {
   params: Promise<{ username: string }>;
+}
+
+function ProfileSkeleton() {
+  return (
+    <div className="max-w-2xl mx-auto">
+      {/* Cover skeleton */}
+      <Skeleton className="h-40 sm:h-56 w-full rounded-3xl" />
+      <div className="px-4 -mt-10 space-y-4">
+        {/* Avatar skeleton */}
+        <div className="flex items-end justify-between">
+          <Skeleton className="size-20 rounded-full ring-4 ring-[var(--bg-base)]" />
+          <Skeleton className="h-9 w-28 rounded-xl" />
+        </div>
+        {/* Name lines */}
+        <div className="space-y-2">
+          <Skeleton className="h-6 w-40 rounded-lg" />
+          <Skeleton className="h-4 w-24 rounded-lg" />
+          <Skeleton className="h-4 w-full max-w-xs rounded-lg" />
+        </div>
+        {/* Stats row */}
+        <div className="flex gap-6 py-3 border-t border-[var(--border)]">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="space-y-1">
+              <Skeleton className="h-5 w-8 rounded" />
+              <Skeleton className="h-3 w-14 rounded" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function ProfilePage({ params }: ProfilePageProps) {
@@ -72,14 +105,15 @@ export default function ProfilePage({ params }: ProfilePageProps) {
     if (!profile || !user) return;
     const convId = await getOrCreateConversation(profile.id);
     if (convId) {
-      router.push(`/messages?conversation=${convId}`);
+      useMessagesStore.getState().setPendingConversationId(convId);
+      router.push("/messages");
     }
   };
 
   if (authLoading || loadingProfile) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-6">
-        <SkeletonProfile />
+        <ProfileSkeleton />
       </div>
     );
   }
@@ -87,8 +121,12 @@ export default function ProfilePage({ params }: ProfilePageProps) {
   if (!profile) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <p className="text-2xl font-bold text-[var(--text-primary)] mb-2">User not found</p>
-        <p className="text-[var(--text-secondary)]">@{username} doesn&apos;t exist</p>
+        <p className="text-2xl font-bold text-[var(--text-primary)] mb-2">
+          User not found
+        </p>
+        <p className="text-[var(--text-secondary)]">
+          @{username} doesn&apos;t exist
+        </p>
       </div>
     );
   }
@@ -96,17 +134,19 @@ export default function ProfilePage({ params }: ProfilePageProps) {
   const isOwn = user?.id === profile.id;
 
   return (
-    <div className="max-w-2xl mx-auto pb-6">
-      <ProfileHeader
-        profile={profile}
-        isOwnProfile={isOwn}
-        onMessageClick={handleMessageClick}
-        onProfileUpdated={setProfile}
-      />
+    <PageTransition>
+      <div className="max-w-2xl mx-auto pb-6">
+        <ProfileHeader
+          profile={profile}
+          isOwnProfile={isOwn}
+          onMessageClick={handleMessageClick}
+          onProfileUpdated={setProfile}
+        />
 
-      <div className="px-4 mt-4">
-        <PostGrid posts={posts} loading={loadingPosts} />
+        <div className="px-4 mt-4">
+          <PostGrid posts={posts} loading={loadingPosts} />
+        </div>
       </div>
-    </div>
+    </PageTransition>
   );
 }
