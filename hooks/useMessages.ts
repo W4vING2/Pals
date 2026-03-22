@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
-import type { Conversation, Message, ConversationParticipant, ProfileSummary } from "@/lib/supabase";
+import type { Conversation, Message, MessageReaction, ConversationParticipant, ProfileSummary } from "@/lib/supabase";
 import { useAuthStore } from "@/lib/store";
 
 export type ParticipantWithProfile = ConversationParticipant & { profiles: ProfileSummary };
@@ -20,6 +20,7 @@ export function useMessages() {
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const channelRef = useRef<ReturnType<ReturnType<typeof getSupabaseBrowserClient>["channel"]> | null>(null);
+  const reactionsChannelRef = useRef<ReturnType<ReturnType<typeof getSupabaseBrowserClient>["channel"]> | null>(null);
   const convDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadConversations = useCallback(async () => {
@@ -97,6 +98,23 @@ export function useMessages() {
     setLoadingConversations(false);
   }, [user]);
 
+  // Helper: load reactions for a set of message IDs
+  const loadReactionsForMessages = useCallback(async (messageIds: string[]): Promise<Map<string, MessageReaction[]>> => {
+    if (messageIds.length === 0) return new Map();
+    const supabase = getSupabaseBrowserClient();
+    const { data } = await supabase
+      .from("message_reactions")
+      .select("*")
+      .in("message_id", messageIds);
+
+    const map = new Map<string, MessageReaction[]>();
+    for (const r of (data ?? []) as MessageReaction[]) {
+      if (!map.has(r.message_id)) map.set(r.message_id, []);
+      map.get(r.message_id)!.push(r);
+    }
+    return map;
+  }, []);
+
   const loadMessages = useCallback(async (conversationId: string, options?: { silent?: boolean }) => {
     if (!options?.silent) setLoadingMessages(true);
     setActiveConversationId(conversationId);
@@ -113,16 +131,23 @@ export function useMessages() {
       if (msgs.length === 0) {
         setMessages([]);
       } else {
-        // Enrich with sender profiles
+        // Enrich with sender profiles + reactions in parallel
         const senderIds = [...new Set(msgs.map((m) => m.sender_id))];
-        const { data: profilesData } = await supabase
-          .from("profiles")
-          .select("id, username, display_name, avatar_url, is_online")
-          .in("id", senderIds);
-        const profilesMap = new Map((profilesData ?? []).map((p) => [p.id, p]));
+        const msgIds = msgs.map((m) => m.id);
+
+        const [profilesResult, reactionsMap] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("id, username, display_name, avatar_url, is_online")
+            .in("id", senderIds),
+          loadReactionsForMessages(msgIds),
+        ]);
+
+        const profilesMap = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
         const enriched: Message[] = msgs.map((m) => ({
           ...m,
           profiles: profilesMap.get(m.sender_id) as Message["profiles"],
+          reactions: reactionsMap.get(m.id) ?? [],
         }));
         setMessages(enriched);
       }
@@ -131,41 +156,74 @@ export function useMessages() {
     }
     setLoadingMessages(false);
 
-    // Mark as read
+    // Mark as read: update participant unread count AND mark individual messages
     if (user) {
-      await supabase
-        .from("conversation_participants")
-        .update({ unread_count: 0, last_read_at: new Date().toISOString() })
-        .eq("conversation_id", conversationId)
-        .eq("user_id", user.id);
+      await Promise.all([
+        supabase
+          .from("conversation_participants")
+          .update({ unread_count: 0, last_read_at: new Date().toISOString() })
+          .eq("conversation_id", conversationId)
+          .eq("user_id", user.id),
+        supabase.rpc("mark_messages_read", { p_conversation_id: conversationId }),
+      ]);
     }
-  }, [user]);
+  }, [user, loadReactionsForMessages]);
 
   const sendMessage = useCallback(
     async (conversationId: string, content: string, imageUrl?: string) => {
       if (!user) return;
       const supabase = getSupabaseBrowserClient();
 
-      const { error } = await supabase.from("messages").insert({
+      // Optimistic: add message locally with "sending" status
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const optimisticMsg: Message = {
+        id: tempId,
         conversation_id: conversationId,
         sender_id: user.id,
         content: content || null,
         image_url: imageUrl ?? null,
-      });
+        is_read: false,
+        created_at: new Date().toISOString(),
+        reactions: [],
+        _status: "sending",
+      };
 
-      if (error) {
+      setMessages((prev) => [...prev, optimisticMsg]);
+
+      const { data: inserted, error } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id: conversationId,
+          sender_id: user.id,
+          content: content || null,
+          image_url: imageUrl ?? null,
+        })
+        .select()
+        .single();
+
+      if (error || !inserted) {
         console.error("Error sending message:", error);
+        // Mark as failed
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, _status: "failed" as const } : m))
+        );
         return;
       }
 
-      // Reload messages to guarantee visibility (real-time may also fire — dedup handles it)
-      loadMessages(conversationId, { silent: true });
+      // Replace temp message with real one (status = "sent")
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId
+            ? { ...m, ...(inserted as Message), id: (inserted as Message).id, _status: "sent" as const, reactions: [] }
+            : m
+        )
+      );
 
       // Update conversation last_message
       await supabase
         .from("conversations")
         .update({
-          last_message: content || "📷 Image",
+          last_message: content || "\ud83d\udcf7 Image",
           last_message_at: new Date().toISOString(),
         })
         .eq("id", conversationId);
@@ -176,7 +234,157 @@ export function useMessages() {
         p_sender_id: user.id,
       });
     },
-    [user, loadMessages]
+    [user]
+  );
+
+  const retryMessage = useCallback(
+    async (tempId: string) => {
+      const msg = messages.find((m) => m.id === tempId && m._status === "failed");
+      if (!msg || !user) return;
+      const supabase = getSupabaseBrowserClient();
+
+      // Mark as sending again
+      setMessages((prev) =>
+        prev.map((m) => (m.id === tempId ? { ...m, _status: "sending" as const } : m))
+      );
+
+      const { data: inserted, error } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id: msg.conversation_id,
+          sender_id: user.id,
+          content: msg.content || null,
+          image_url: msg.image_url ?? null,
+        })
+        .select()
+        .single();
+
+      if (error || !inserted) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, _status: "failed" as const } : m))
+        );
+        return;
+      }
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId
+            ? { ...m, ...(inserted as Message), id: (inserted as Message).id, _status: "sent" as const, reactions: [] }
+            : m
+        )
+      );
+
+      await supabase
+        .from("conversations")
+        .update({
+          last_message: msg.content || "\ud83d\udcf7 Image",
+          last_message_at: new Date().toISOString(),
+        })
+        .eq("id", msg.conversation_id);
+
+      await supabase.rpc("increment_unread_counts", {
+        p_conversation_id: msg.conversation_id,
+        p_sender_id: user.id,
+      });
+    },
+    [user, messages]
+  );
+
+  const editMessage = useCallback(
+    async (messageId: string, newContent: string) => {
+      if (!user) return;
+      const supabase = getSupabaseBrowserClient();
+
+      const { error } = await supabase
+        .from("messages")
+        .update({ content: newContent })
+        .eq("id", messageId)
+        .eq("sender_id", user.id);
+
+      if (error) {
+        console.error("Error editing message:", error);
+        return;
+      }
+
+      // Update local state immediately
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, content: newContent } : m))
+      );
+    },
+    [user]
+  );
+
+  const deleteMessage = useCallback(
+    async (messageId: string) => {
+      if (!user) return;
+      const supabase = getSupabaseBrowserClient();
+
+      const { error } = await supabase
+        .from("messages")
+        .delete()
+        .eq("id", messageId)
+        .eq("sender_id", user.id);
+
+      if (error) {
+        console.error("Error deleting message:", error);
+        return;
+      }
+
+      // Remove from local state
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    },
+    [user]
+  );
+
+  const toggleReaction = useCallback(
+    async (messageId: string, emoji: string) => {
+      if (!user) return;
+      const supabase = getSupabaseBrowserClient();
+
+      // Check if already reacted
+      const { data: existing } = await supabase
+        .from("message_reactions")
+        .select("id")
+        .eq("message_id", messageId)
+        .eq("user_id", user.id)
+        .eq("emoji", emoji)
+        .maybeSingle();
+
+      if (existing) {
+        // Remove reaction
+        await supabase.from("message_reactions").delete().eq("id", existing.id);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  reactions: (m.reactions ?? []).filter(
+                    (r) => !(r.user_id === user.id && r.emoji === emoji)
+                  ),
+                }
+              : m
+          )
+        );
+      } else {
+        // Add reaction
+        const { data: inserted } = await supabase
+          .from("message_reactions")
+          .insert({ message_id: messageId, user_id: user.id, emoji })
+          .select()
+          .single();
+
+        if (inserted) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === messageId
+                ? { ...m, reactions: [...(m.reactions ?? []), inserted as MessageReaction] }
+                : m
+            )
+          );
+        }
+      }
+    },
+    [user]
   );
 
   const uploadMessageImage = useCallback(async (file: File): Promise<string | null> => {
@@ -203,10 +411,6 @@ export function useMessages() {
       if (!user) return null;
       const supabase = getSupabaseBrowserClient();
 
-      // Find existing conversation: get my conversations, then check
-      // which ones have the other user as participant.
-      // RLS only allows seeing own rows, so we query our own participations
-      // and load ALL participants for those conversations.
       const { data: myParticipations } = await supabase
         .from("conversation_participants")
         .select("conversation_id")
@@ -215,8 +419,6 @@ export function useMessages() {
       if (myParticipations && myParticipations.length > 0) {
         const myConvIds = myParticipations.map((p) => p.conversation_id);
 
-        // Load all participants in my conversations (RLS allows seeing
-        // participants of conversations you belong to)
         const { data: allParticipants } = await supabase
           .from("conversation_participants")
           .select("conversation_id, user_id")
@@ -232,9 +434,6 @@ export function useMessages() {
         }
       }
 
-      // Create new conversation with client-generated UUID
-      // (avoids RLS issue: after insert, .select() fails because
-      // you're not yet a participant of the conversation)
       const convId = crypto.randomUUID();
 
       const { error: convError } = await supabase
@@ -246,7 +445,6 @@ export function useMessages() {
         return null;
       }
 
-      // Add both participants — now the conversation becomes visible via RLS
       const { error: partError } = await supabase
         .from("conversation_participants")
         .insert([
@@ -285,12 +483,10 @@ export function useMessages() {
         },
         async (payload) => {
           const msg = payload.new as Message;
-          // Avoid duplicates (message we just sent)
           setMessages((prev) => {
             if (prev.some((m) => m.id === msg.id)) return prev;
-            return [...prev, msg];
+            return [...prev, { ...msg, reactions: [] }];
           });
-          // Load sender profile and enrich
           const { data: profile } = await supabase
             .from("profiles")
             .select("id, username, display_name, avatar_url, bio, cover_url, location, website, date_of_birth, followers_count, following_count, posts_count, is_online, last_seen, created_at, updated_at")
@@ -301,6 +497,49 @@ export function useMessages() {
               m.id === msg.id ? { ...m, profiles: profile ?? undefined } : m
             )
           );
+          // If it's from someone else, mark as read immediately (user is viewing chat)
+          if (msg.sender_id !== user?.id && user && activeConversationId) {
+            await Promise.all([
+              supabase.rpc("mark_messages_read", { p_conversation_id: activeConversationId }),
+              supabase
+                .from("conversation_participants")
+                .update({ unread_count: 0, last_read_at: new Date().toISOString() })
+                .eq("conversation_id", activeConversationId)
+                .eq("user_id", user.id),
+            ]);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${activeConversationId}`,
+        },
+        (payload) => {
+          const updated = payload.new as Message;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === updated.id
+                ? { ...m, content: updated.content, image_url: updated.image_url, is_read: updated.is_read }
+                : m
+            )
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${activeConversationId}`,
+        },
+        (payload) => {
+          const deleted = payload.old as { id: string };
+          setMessages((prev) => prev.filter((m) => m.id !== deleted.id));
         }
       )
       .subscribe();
@@ -312,7 +551,63 @@ export function useMessages() {
     };
   }, [activeConversationId]);
 
-  // Subscribe to real-time conversation list updates (debounced)
+  // Subscribe to real-time reactions for active conversation messages
+  useEffect(() => {
+    if (!activeConversationId) return;
+    const supabase = getSupabaseBrowserClient();
+
+    if (reactionsChannelRef.current) {
+      supabase.removeChannel(reactionsChannelRef.current);
+    }
+
+    const channel = supabase
+      .channel(`reactions:${activeConversationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "message_reactions",
+        },
+        (payload) => {
+          const reaction = payload.new as MessageReaction;
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== reaction.message_id) return m;
+              // Avoid duplicates
+              if ((m.reactions ?? []).some((r) => r.id === reaction.id)) return m;
+              return { ...m, reactions: [...(m.reactions ?? []), reaction] };
+            })
+          );
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "message_reactions",
+        },
+        (payload) => {
+          const deleted = payload.old as { id: string; message_id: string };
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== deleted.message_id) return m;
+              return { ...m, reactions: (m.reactions ?? []).filter((r) => r.id !== deleted.id) };
+            })
+          );
+        }
+      )
+      .subscribe();
+
+    reactionsChannelRef.current = channel;
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeConversationId]);
+
+  // Subscribe to conversation list updates (debounced) — use FILTERED subscription
   useEffect(() => {
     if (!user) return;
     const supabase = getSupabaseBrowserClient();
@@ -329,7 +624,8 @@ export function useMessages() {
         {
           event: "UPDATE",
           schema: "public",
-          table: "conversations",
+          table: "conversation_participants",
+          filter: `user_id=eq.${user.id}`,
         },
         debouncedReload
       )
@@ -366,6 +662,10 @@ export function useMessages() {
     loadConversations,
     loadMessages,
     sendMessage,
+    retryMessage,
+    editMessage,
+    deleteMessage,
+    toggleReaction,
     uploadMessageImage,
     getOrCreateConversation,
   };

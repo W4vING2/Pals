@@ -7,6 +7,7 @@ import { useCallStore } from "@/lib/store";
 import { useAuthStore } from "@/lib/store";
 import { useCalls } from "@/hooks/useCalls";
 import { getWebRTCManager } from "@/lib/webrtc";
+import { startCallingTone, stopCallingTone } from "@/lib/ringtone";
 import { cn } from "@/lib/utils";
 
 function formatDuration(seconds: number): string {
@@ -18,7 +19,7 @@ function formatDuration(seconds: number): string {
 }
 
 export function CallOverlay() {
-  const { activeCall, callStatus } = useCallStore();
+  const { activeCall, callStatus, callError } = useCallStore();
   const { profile } = useAuthStore();
   const { hangup } = useCalls();
 
@@ -30,9 +31,9 @@ export function CallOverlay() {
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Use remoteProfile for displaying the other person's info
   const remote = activeCall?.remoteProfile;
   const remoteName =
     remote?.display_name ?? remote?.username ?? "Unknown";
@@ -40,6 +41,17 @@ export function CallOverlay() {
   const isRinging = callStatus === "ringing";
   const isConnected = callStatus === "connected";
 
+  // Play calling tone while ringing
+  useEffect(() => {
+    if (isRinging) {
+      startCallingTone();
+    } else {
+      stopCallingTone();
+    }
+    return () => stopCallingTone();
+  }, [isRinging]);
+
+  // Set up stream handlers
   useEffect(() => {
     if (!activeCall) return;
 
@@ -47,22 +59,41 @@ export function CallOverlay() {
     const stream = manager.getLocalStream();
     if (stream) {
       setLocalStream(stream);
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
     }
 
-    manager.onStream = (stream) => {
-      setRemoteStream(stream);
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = stream;
-      }
+    manager.onStream = (remoteStr) => {
+      setRemoteStream(remoteStr);
     };
 
     return () => {
       manager.onStream = null;
     };
   }, [activeCall]);
+
+  // Attach remote stream to audio/video elements when available
+  // Also re-run when isRinging changes (video element appears after ringing ends)
+  useEffect(() => {
+    if (!remoteStream) return;
+
+    // Always attach to the hidden audio element for audio playback
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch(() => {});
+    }
+
+    // Attach to video element (may only exist after ringing ends)
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+  }, [remoteStream, isRinging]);
+
+  // Attach local stream to video element
+  // Also re-run when isRinging changes (local video PiP appears after ringing ends)
+  useEffect(() => {
+    if (localStream && localVideoRef.current) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream, isRinging]);
 
   // Only start timer when connected
   useEffect(() => {
@@ -94,8 +125,9 @@ export function CallOverlay() {
     setCameraOn((c) => !c);
   };
 
-  // Status text
-  const statusText = isRinging
+  const statusText = callError
+    ? "Error"
+    : isRinging
     ? "Calling..."
     : isConnected
     ? formatDuration(duration)
@@ -109,6 +141,9 @@ export function CallOverlay() {
       transition={{ duration: 0.25 }}
       className="fixed inset-0 z-[100] bg-[var(--bg-base)]"
     >
+      {/* Hidden audio element — ALWAYS renders, plays remote audio for ALL call types */}
+      <audio ref={remoteAudioRef} autoPlay playsInline />
+
       {isVideo && !isRinging ? (
         /* -- Video call (connected or connecting) -- */
         <>
@@ -157,20 +192,12 @@ export function CallOverlay() {
                 {profile?.avatar_url ? (
                   <img
                     src={profile.avatar_url}
-                    alt={
-                      profile.display_name ??
-                      profile.username ??
-                      "Me"
-                    }
+                    alt={profile.display_name ?? profile.username ?? "Me"}
                     className="w-10 h-10 rounded-full object-cover"
                   />
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-sm font-semibold">
-                    {(
-                      profile?.display_name ??
-                      profile?.username ??
-                      "M"
-                    )[0]?.toUpperCase()}
+                    {(profile?.display_name ?? profile?.username ?? "M")[0]?.toUpperCase()}
                   </div>
                 )}
               </div>
@@ -224,6 +251,13 @@ export function CallOverlay() {
               {statusText}
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Error banner */}
+      {callError && (
+        <div className="absolute top-16 left-4 right-4 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-sm bg-red-500/90 backdrop-blur-xl text-white text-sm rounded-2xl px-4 py-3 text-center">
+          {callError}
         </div>
       )}
 

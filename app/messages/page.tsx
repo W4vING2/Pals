@@ -25,6 +25,10 @@ export default function MessagesPage() {
     loadMessages,
     loadConversations,
     sendMessage,
+    editMessage,
+    deleteMessage,
+    toggleReaction,
+    retryMessage,
     uploadMessageImage,
   } = useMessages();
   const { initiateCall } = useCalls();
@@ -150,6 +154,10 @@ export default function MessagesPage() {
             loading={loadingMessages || loadingConversations}
             onSend={handleSend}
             onUploadImage={uploadMessageImage}
+            onEditMessage={editMessage}
+            onDeleteMessage={deleteMessage}
+            onToggleReaction={toggleReaction}
+            onRetryMessage={retryMessage}
             onInitiateCall={handleInitiateCall}
             onOpenGroupSettings={() => setGroupSettingsOpen(true)}
             onBack={handleBack}

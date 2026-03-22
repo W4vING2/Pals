@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, MessageSquare, Users } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { OnlineIndicator } from "@/components/shared/OnlineIndicator";
 import { cn } from "@/lib/utils";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import type { ConversationWithDetails } from "@/hooks/useMessages";
 import { useAuthStore } from "@/lib/store";
 
@@ -49,6 +50,20 @@ export function ConversationList({
 }: ConversationListProps) {
   const { user } = useAuthStore();
   const [search, setSearch] = useState("");
+
+  // Collect all other user IDs for realtime online polling
+  const otherUserIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const conv of conversations) {
+      if (!conv.is_group) {
+        const other = conv.participants.find((p) => p.user_id !== user?.id);
+        if (other) ids.push(other.user_id);
+      }
+    }
+    return [...new Set(ids)];
+  }, [conversations, user?.id]);
+
+  const onlineMap = useOnlineStatus(otherUserIds);
 
   const filtered = conversations.filter((conv) => {
     if (!search) return true;
@@ -112,6 +127,10 @@ export function ConversationList({
               ? conv.avatar_url
               : otherProfile?.avatar_url;
             const isActive = conv.id === activeId;
+            // Use realtime online status
+            const isOnline = other
+              ? onlineMap.get(other.user_id) ?? otherProfile?.is_online ?? false
+              : false;
 
             return (
               <motion.button
@@ -148,7 +167,7 @@ export function ConversationList({
                   )}
                   {!isGroup && (
                     <OnlineIndicator
-                      isOnline={otherProfile?.is_online ?? false}
+                      isOnline={isOnline}
                       size="sm"
                     />
                   )}

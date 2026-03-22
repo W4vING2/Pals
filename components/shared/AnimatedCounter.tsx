@@ -10,7 +10,8 @@ interface AnimatedCounterProps {
 }
 
 export function AnimatedCounter({ value, duration = 0.8, className }: AnimatedCounterProps) {
-  const motionValue = useMotionValue(0);
+  const isFirstRender = useRef(true);
+  const motionValue = useMotionValue(value); // Start at actual value, not 0
   const springValue = useSpring(motionValue, {
     stiffness: 100,
     damping: 30,
@@ -19,11 +20,17 @@ export function AnimatedCounter({ value, duration = 0.8, className }: AnimatedCo
   const display = useTransform(springValue, (latest) =>
     Math.round(latest).toLocaleString()
   );
-  const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
-    motionValue.set(value);
+    if (isFirstRender.current) {
+      // First render: set immediately, no animation
+      isFirstRender.current = false;
+      motionValue.jump(value);
+    } else {
+      // Subsequent updates: animate
+      motionValue.set(value);
+    }
   }, [value, motionValue]);
 
-  return <motion.span ref={ref} className={className}>{display}</motion.span>;
+  return <motion.span className={className}>{display}</motion.span>;
 }

@@ -4,23 +4,22 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Home, Search, PlusCircle, MessageCircle, User } from "lucide-react";
-import { useAuthStore, useNotificationStore, useUnreadMessagesStore, useCreatePostStore } from "@/lib/store";
+import { Home, Search, MessageCircle, Bell, User } from "lucide-react";
+import { useAuthStore, useNotificationStore, useUnreadMessagesStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
   href: string;
   icon: typeof Home;
   label: string;
-  isCreate?: boolean;
   isDynamic?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", icon: Home, label: "Home" },
   { href: "/search", icon: Search, label: "Search" },
-  { href: "/create", icon: PlusCircle, label: "Create", isCreate: true },
-  { href: "/messages", icon: MessageCircle, label: "Messages" },
+  { href: "/messages", icon: MessageCircle, label: "Chat" },
+  { href: "/notifications", icon: Bell, label: "Notifications" },
   { href: "/profile", icon: User, label: "Profile", isDynamic: true },
 ];
 
@@ -31,7 +30,6 @@ export function MobileNavBar() {
   const profile = useAuthStore((s) => s.profile);
   const unreadCount = useNotificationStore((s) => s.unreadCount);
   const unreadMessages = useUnreadMessagesStore((s) => s.unreadMessagesCount);
-  const openCreatePost = useCreatePostStore((s) => s.setOpen);
 
   function isActive(href: string, isDynamic?: boolean) {
     if (isDynamic) return pathname.startsWith("/profile");
@@ -65,22 +63,13 @@ export function MobileNavBar() {
           const Icon = item.icon;
           const href = resolveHref(item);
 
-          // Create button — gradient circle
-          if (item.isCreate) {
-            return (
-              <motion.button
-                key={item.label}
-                onClick={() => openCreatePost(true)}
-                whileTap={{ scale: 0.85 }}
-                transition={spring}
-                className="relative flex items-center justify-center"
-              >
-                <div className="gradient-bg flex h-10 w-10 items-center justify-center rounded-full shadow-lg shadow-purple-500/25">
-                  <Icon className="h-6 w-6 text-white" strokeWidth={2.2} />
-                </div>
-              </motion.button>
-            );
-          }
+          // Badge count for this item
+          const badgeCount =
+            item.label === "Chat"
+              ? unreadMessages
+              : item.label === "Notifications"
+              ? unreadCount
+              : 0;
 
           return (
             <Link
@@ -117,14 +106,14 @@ export function MobileNavBar() {
                     )}
                     strokeWidth={active ? 2.4 : 1.8}
                   />
-                  {item.label === "Messages" && unreadMessages > 0 && (
+                  {badgeCount > 0 && (
                     <motion.span
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
                       transition={{ type: "spring", stiffness: 500, damping: 20 }}
                       className="absolute -right-2 -top-1.5 flex h-4.5 min-w-[18px] items-center justify-center rounded-full bg-[var(--destructive)] px-1 text-[10px] font-bold text-white"
                     >
-                      {unreadMessages > 99 ? "99+" : unreadMessages}
+                      {badgeCount > 99 ? "99+" : badgeCount}
                     </motion.span>
                   )}
                 </motion.div>

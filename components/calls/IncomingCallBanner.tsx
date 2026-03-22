@@ -1,98 +1,189 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Phone, PhoneOff, Video } from "lucide-react";
 import { useCalls } from "@/hooks/useCalls";
+import { startRingtone, stopRingtone } from "@/lib/ringtone";
 
 export function IncomingCallBanner() {
   const { incomingCall, acceptCall, declineCall } = useCalls();
+
+  // Start/stop ringtone
+  useEffect(() => {
+    if (incomingCall) {
+      startRingtone();
+    } else {
+      stopRingtone();
+    }
+    return () => stopRingtone();
+  }, [incomingCall]);
+
+  const callerName =
+    incomingCall?.callerProfile?.display_name ??
+    incomingCall?.callerProfile?.username ??
+    "Unknown";
+
+  const callerAvatar = incomingCall?.callerProfile?.avatar_url;
+  const isVideo = incomingCall?.type === "video";
 
   return (
     <AnimatePresence>
       {incomingCall && (
         <motion.div
-          initial={{ y: -120, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: -120, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 300, damping: 28 }}
-          className="fixed top-4 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-[60]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+          className="fixed inset-0 z-[90] bg-[var(--bg-base)]"
         >
-          <div className="bg-[var(--bg-elevated)]/80 backdrop-blur-xl rounded-3xl shadow-lg border border-[var(--border)] p-4 flex items-center gap-3 sm:gap-4 sm:min-w-80 max-w-sm mx-auto">
-            {/* Pulsing avatar */}
-            <div className="relative shrink-0">
+          {/* Background gradient */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[var(--accent-mint)]/10 via-[var(--bg-base)] to-[var(--bg-base)]" />
+
+          {/* Content */}
+          <div className="relative h-full flex flex-col items-center justify-center px-6">
+            {/* Incoming call label */}
+            <motion.p
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 }}
+              className="text-sm text-[var(--text-secondary)] mb-8 flex items-center gap-2"
+            >
+              {isVideo ? (
+                <Video className="w-4 h-4" />
+              ) : (
+                <Phone className="w-4 h-4" />
+              )}
+              {isVideo ? "Incoming video call" : "Incoming voice call"}
+            </motion.p>
+
+            {/* Avatar with pulse rings */}
+            <div className="relative mb-6">
+              {/* Outer pulse */}
               <motion.span
                 animate={{
-                  scale: [1, 1.3, 1],
-                  opacity: [0.5, 0, 0.5],
+                  scale: [1, 1.8, 1],
+                  opacity: [0.3, 0, 0.3],
                 }}
                 transition={{
-                  duration: 1.5,
+                  duration: 2,
                   repeat: Infinity,
                   ease: "easeOut",
                 }}
+                className="absolute inset-0 rounded-full bg-[var(--accent-mint)]/20"
+              />
+              {/* Inner pulse */}
+              <motion.span
+                animate={{
+                  scale: [1, 1.4, 1],
+                  opacity: [0.4, 0, 0.4],
+                }}
+                transition={{
+                  duration: 2,
+                  repeat: Infinity,
+                  ease: "easeOut",
+                  delay: 0.3,
+                }}
                 className="absolute inset-0 rounded-full bg-[var(--accent-mint)]/30"
               />
-              {incomingCall.callerProfile?.avatar_url ? (
+
+              {callerAvatar ? (
                 <img
-                  src={incomingCall.callerProfile.avatar_url}
-                  alt={
-                    incomingCall.callerProfile.display_name ??
-                    incomingCall.callerProfile.username ??
-                    "Caller"
-                  }
-                  className="w-10 h-10 rounded-full object-cover relative z-10"
+                  src={callerAvatar}
+                  alt={callerName}
+                  className="w-28 h-28 rounded-full object-cover relative z-10 ring-4 ring-[var(--accent-mint)]/20"
                 />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-sm font-semibold relative z-10">
-                  {(
-                    incomingCall.callerProfile?.display_name ??
-                    incomingCall.callerProfile?.username ??
-                    "?"
-                  )[0]?.toUpperCase()}
+                <div className="w-28 h-28 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-4xl font-bold relative z-10 ring-4 ring-[var(--accent-mint)]/20">
+                  {callerName[0]?.toUpperCase()}
                 </div>
               )}
             </div>
 
-            {/* Info */}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-[var(--text-primary)] truncate">
-                {incomingCall.callerProfile?.display_name ??
-                  incomingCall.callerProfile?.username ??
-                  "Unknown"}
+            {/* Caller name */}
+            <motion.p
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="text-2xl font-bold text-[var(--text-primary)] mb-1"
+            >
+              {callerName}
+            </motion.p>
+
+            {incomingCall.callerProfile?.username && (
+              <p className="text-sm text-[var(--text-secondary)] mb-2">
+                @{incomingCall.callerProfile.username}
               </p>
-              <p className="text-xs text-[var(--text-secondary)] flex items-center gap-1">
-                {incomingCall.type === "video" ? (
-                  <>
-                    <Video className="w-3 h-3" />
-                    Video call
-                  </>
-                ) : (
-                  <>
-                    <Phone className="w-3 h-3" />
-                    Voice call
-                  </>
-                )}
-              </p>
+            )}
+
+            {/* Animated dots */}
+            <div className="flex items-center gap-1 mt-2 mb-16">
+              {[0, 1, 2].map((i) => (
+                <motion.span
+                  key={i}
+                  animate={{ opacity: [0.3, 1, 0.3] }}
+                  transition={{
+                    duration: 1.2,
+                    repeat: Infinity,
+                    delay: i * 0.2,
+                  }}
+                  className="w-1.5 h-1.5 rounded-full bg-[var(--accent-mint)]"
+                />
+              ))}
             </div>
 
-            {/* Decline */}
-            <button
-              onClick={declineCall}
-              className="w-12 h-12 sm:w-10 sm:h-10 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white transition-all duration-150 active:scale-95 shrink-0"
-              aria-label="Decline"
+            {/* Action buttons */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, type: "spring", stiffness: 200, damping: 20 }}
+              className="flex items-center gap-12"
+              style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
             >
-              <PhoneOff className="w-5 h-5" />
-            </button>
+              {/* Decline */}
+              <div className="flex flex-col items-center gap-2">
+                <motion.button
+                  onClick={declineCall}
+                  whileTap={{ scale: 0.9 }}
+                  animate={{
+                    boxShadow: [
+                      "0 0 0 0 rgba(239, 68, 68, 0.3)",
+                      "0 0 0 10px rgba(239, 68, 68, 0)",
+                    ],
+                  }}
+                  transition={{
+                    boxShadow: { duration: 1.5, repeat: Infinity, ease: "easeOut" },
+                  }}
+                  className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white active:scale-95 transition-colors"
+                  aria-label="Decline"
+                >
+                  <PhoneOff className="w-7 h-7" />
+                </motion.button>
+                <span className="text-xs text-[var(--text-secondary)]">Decline</span>
+              </div>
 
-            {/* Accept */}
-            <button
-              onClick={acceptCall}
-              className="w-12 h-12 sm:w-10 sm:h-10 rounded-full bg-[var(--accent-mint)] hover:bg-[var(--accent-mint-hover)] flex items-center justify-center text-[var(--bg-base)] transition-all duration-150 active:scale-95 shrink-0"
-              aria-label="Accept"
-            >
-              <Phone className="w-5 h-5" />
-            </button>
+              {/* Accept */}
+              <div className="flex flex-col items-center gap-2">
+                <motion.button
+                  onClick={acceptCall}
+                  whileTap={{ scale: 0.9 }}
+                  animate={{
+                    boxShadow: [
+                      "0 0 0 0 rgba(52, 211, 153, 0.3)",
+                      "0 0 0 10px rgba(52, 211, 153, 0)",
+                    ],
+                  }}
+                  transition={{
+                    boxShadow: { duration: 1.5, repeat: Infinity, ease: "easeOut" },
+                  }}
+                  className="w-16 h-16 rounded-full bg-emerald-500 hover:bg-emerald-600 flex items-center justify-center text-white active:scale-95 transition-colors"
+                  aria-label="Accept"
+                >
+                  <Phone className="w-7 h-7" />
+                </motion.button>
+                <span className="text-xs text-[var(--text-secondary)]">Accept</span>
+              </div>
+            </motion.div>
           </div>
         </motion.div>
       )}

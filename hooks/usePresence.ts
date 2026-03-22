@@ -4,16 +4,24 @@ import { useEffect, useRef } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { useAuthStore } from "@/lib/store";
 
-const HEARTBEAT_INTERVAL = 60_000; // 60 seconds (reduced frequency)
+const HEARTBEAT_INTERVAL = 55_000; // 55 seconds (cron cleans up after 2 min)
 
 export function usePresence() {
   const { user } = useAuthStore();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const tokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
 
     const supabase = getSupabaseBrowserClient();
+
+    // Cache the access token for beforeunload
+    const cacheToken = async () => {
+      const { data } = await supabase.auth.getSession();
+      tokenRef.current = data?.session?.access_token ?? null;
+    };
+    cacheToken();
 
     const goOnline = async () => {
       try {
@@ -21,9 +29,10 @@ export function usePresence() {
           .from("profiles")
           .update({ is_online: true, last_seen: new Date().toISOString() })
           .eq("id", user.id);
-      } catch {
-        // Silently ignore — connection might be temporarily lost
-      }
+        // Refresh token cache
+        const { data } = await supabase.auth.getSession();
+        tokenRef.current = data?.session?.access_token ?? null;
+      } catch { /* ignore */ }
     };
 
     const goOffline = async () => {
@@ -32,32 +41,43 @@ export function usePresence() {
           .from("profiles")
           .update({ is_online: false, last_seen: new Date().toISOString() })
           .eq("id", user.id);
-      } catch {
-        // Silently ignore
-      }
+      } catch { /* ignore */ }
     };
 
     // Go online immediately
     goOnline();
 
-    // Heartbeat to keep online status fresh
+    // Heartbeat
     intervalRef.current = setInterval(goOnline, HEARTBEAT_INTERVAL);
 
-    // Go offline on tab close
+    // Go offline on tab close — use fetch with keepalive + auth token
     const handleBeforeUnload = () => {
-      // Use sendBeacon — only reliable method during page unload
+      const token = tokenRef.current || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
       const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`;
       const body = JSON.stringify({ is_online: false, last_seen: new Date().toISOString() });
-      navigator.sendBeacon?.(
-        url,
-        new Blob([body], { type: "application/json" })
-      );
+      try {
+        fetch(url, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+            "Authorization": `Bearer ${token}`,
+            "Prefer": "return=minimal",
+          },
+          body,
+          keepalive: true,
+        });
+      } catch { /* ignore */ }
     };
 
-    // Handle visibility change (tab switch)
+    // Handle visibility change
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         goOnline();
+      } else {
+        // When tab becomes hidden, try to mark offline immediately
+        // In case the tab is closed next, at least we tried
+        handleBeforeUnload();
       }
     };
 

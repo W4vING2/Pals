@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
@@ -51,6 +51,9 @@ export function ProfileHeader({
   const [localFollowersCount, setLocalFollowersCount] = useState(
     profile.followers_count ?? 0
   );
+  const [localFollowingCount, setLocalFollowingCount] = useState(
+    profile.following_count ?? 0
+  );
   const [editing, setEditing] = useState(false);
   const [showFollowModal, setShowFollowModal] = useState<
     "followers" | "following" | null
@@ -84,10 +87,78 @@ export function ProfileHeader({
       .then(({ data }) => setFollowing(!!data));
   }, [user, profile.id, isOwnProfile]);
 
-  // Sync local count when profile prop changes
+  // Sync local counts when profile prop changes
   useEffect(() => {
     setLocalFollowersCount(profile.followers_count ?? 0);
   }, [profile.followers_count]);
+
+  useEffect(() => {
+    setLocalFollowingCount(profile.following_count ?? 0);
+  }, [profile.following_count]);
+
+  // Real-time follower/following count updates
+  const reloadFollowCounts = useCallback(async () => {
+    const supabase = getSupabaseBrowserClient();
+    const [{ count: followers }, { count: followingCount }] = await Promise.all([
+      supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", profile.id),
+      supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", profile.id),
+    ]);
+    setLocalFollowersCount(followers ?? 0);
+    setLocalFollowingCount(followingCount ?? 0);
+  }, [profile.id]);
+
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+
+    // Subscribe to follows where this profile is the target (followers change)
+    const channel = supabase
+      .channel(`follows:${profile.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "follows",
+          filter: `following_id=eq.${profile.id}`,
+        },
+        () => setLocalFollowersCount((c) => c + 1)
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "follows",
+          filter: `following_id=eq.${profile.id}`,
+        },
+        () => setLocalFollowersCount((c) => Math.max(0, c - 1))
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "follows",
+          filter: `follower_id=eq.${profile.id}`,
+        },
+        () => setLocalFollowingCount((c) => c + 1)
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "follows",
+          filter: `follower_id=eq.${profile.id}`,
+        },
+        () => setLocalFollowingCount((c) => Math.max(0, c - 1))
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile.id, reloadFollowCounts]);
 
   const openFollowModal = async (type: "followers" | "following") => {
     setShowFollowModal(type);
@@ -537,7 +608,7 @@ export function ProfileHeader({
             className="text-center hover:opacity-70 transition-opacity"
           >
             <AnimatedCounter
-              value={profile.following_count ?? 0}
+              value={localFollowingCount}
               className="text-lg font-bold text-[var(--text-primary)]"
             />
             <p className="text-xs text-[var(--text-secondary)]">Following</p>

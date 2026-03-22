@@ -1,5 +1,4 @@
 import SimplePeer from "simple-peer";
-import { getSupabaseBrowserClient } from "./supabase";
 
 export type CallType = "voice" | "video";
 
@@ -9,37 +8,92 @@ type ConnectedHandler = () => void;
 type ErrorHandler = (err: Error) => void;
 type CloseHandler = () => void;
 
+// ICE servers — STUN + free TURN for NAT traversal
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  // Free TURN servers from Open Relay (for symmetric NAT / mobile networks)
+  {
+    urls: "turn:openrelay.metered.ca:80",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+  {
+    urls: "turn:openrelay.metered.ca:443",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+  {
+    urls: "turn:openrelay.metered.ca:443?transport=tcp",
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+];
+
 export class WebRTCManager {
   private peer: SimplePeer.Instance | null = null;
   private localStream: MediaStream | null = null;
-  private conversationId: string | null = null;
-  private userId: string | null = null;
-  private remoteUserId: string | null = null;
 
   // Event handlers
   public onSignal: SignalHandler | null = null;
+  /** Override: if set, peer "signal" events call this instead of default handler */
+  public onSignalOverride: SignalHandler | null = null;
   public onStream: StreamHandler | null = null;
   public onConnected: ConnectedHandler | null = null;
   public onError: ErrorHandler | null = null;
   public onClose: CloseHandler | null = null;
 
   private async getMedia(callType: CallType): Promise<MediaStream> {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error(
+        window.isSecureContext
+          ? "Camera/microphone not supported in this browser"
+          : "Calls require HTTPS. Open the app via HTTPS to use calls."
+      );
+    }
+
     const constraints: MediaStreamConstraints = {
       audio: true,
-      video: callType === "video" ? { width: 1280, height: 720 } : false,
+      video: callType === "video"
+        ? { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }
+        : false,
     };
-    return navigator.mediaDevices.getUserMedia(constraints);
+
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (err: unknown) {
+      const e = err as DOMException;
+      if (e.name === "NotAllowedError") {
+        throw new Error(
+          callType === "video"
+            ? "Camera and microphone access denied. Please allow permissions and try again."
+            : "Microphone access denied. Please allow permissions and try again."
+        );
+      }
+      if (e.name === "NotFoundError") {
+        throw new Error(
+          callType === "video"
+            ? "No camera found on this device. Try a voice call instead."
+            : "No microphone found on this device."
+        );
+      }
+      if (e.name === "NotReadableError") {
+        throw new Error("Camera/microphone is already in use by another app.");
+      }
+      throw new Error(`Could not access media: ${e.message}`);
+    }
   }
 
   async initiateCall(
-    conversationId: string,
-    userId: string,
-    remoteUserId: string,
+    _conversationId: string,
+    _userId: string,
+    _remoteUserId: string,
     callType: CallType
   ): Promise<MediaStream> {
-    this.conversationId = conversationId;
-    this.userId = userId;
-    this.remoteUserId = remoteUserId;
+    // Clean up any leftover state from previous calls (preserve onSignalOverride)
+    const savedOverride = this.onSignalOverride;
+    this.destroyPeerAndStream();
+    this.onSignalOverride = savedOverride;
 
     this.localStream = await this.getMedia(callType);
 
@@ -47,22 +101,24 @@ export class WebRTCManager {
       initiator: true,
       trickle: true,
       stream: this.localStream,
+      config: { iceServers: ICE_SERVERS },
     });
 
-    this.bindPeerEvents(conversationId, userId, remoteUserId, callType);
+    this.bindPeerEvents();
     return this.localStream;
   }
 
   async acceptCall(
-    conversationId: string,
-    userId: string,
-    callerId: string,
+    _conversationId: string,
+    _userId: string,
+    _callerId: string,
     incomingSignal: string,
     callType: CallType
   ): Promise<MediaStream> {
-    this.conversationId = conversationId;
-    this.userId = userId;
-    this.remoteUserId = callerId;
+    // Clean up any leftover state (preserve onSignalOverride)
+    const savedOverride = this.onSignalOverride;
+    this.destroyPeerAndStream();
+    this.onSignalOverride = savedOverride;
 
     this.localStream = await this.getMedia(callType);
 
@@ -70,9 +126,10 @@ export class WebRTCManager {
       initiator: false,
       trickle: true,
       stream: this.localStream,
+      config: { iceServers: ICE_SERVERS },
     });
 
-    this.bindPeerEvents(conversationId, userId, callerId, callType);
+    this.bindPeerEvents();
 
     // Feed in the incoming offer signal
     try {
@@ -95,34 +152,15 @@ export class WebRTCManager {
     }
   }
 
-  private bindPeerEvents(
-    conversationId: string,
-    userId: string,
-    remoteUserId: string,
-    callType: CallType
-  ) {
+  private bindPeerEvents() {
     if (!this.peer) return;
 
-    this.peer.on("signal", async (signal) => {
-      this.onSignal?.(signal);
-
-      // Send signal via Supabase Realtime as a DB insert
-      const supabase = getSupabaseBrowserClient();
-      const signalType: "offer" | "answer" | "ice-candidate" =
-        signal.type === "offer"
-          ? "offer"
-          : signal.type === "answer"
-          ? "answer"
-          : "ice-candidate";
-
-      await supabase.from("call_signals").insert({
-        conversation_id: conversationId,
-        caller_id: userId,
-        callee_id: remoteUserId,
-        type: signalType,
-        call_type: callType,
-        signal: JSON.stringify(signal),
-      });
+    this.peer.on("signal", (signal) => {
+      if (this.onSignalOverride) {
+        this.onSignalOverride(signal);
+      } else {
+        this.onSignal?.(signal);
+      }
     });
 
     this.peer.on("stream", (stream) => {
@@ -139,23 +177,8 @@ export class WebRTCManager {
 
     this.peer.on("close", () => {
       this.onClose?.();
-      this.cleanup();
+      this.destroyPeerAndStream();
     });
-  }
-
-  async hangup(conversationId: string, userId: string, remoteUserId: string) {
-    // Notify remote peer via DB signal
-    const supabase = getSupabaseBrowserClient();
-    await supabase.from("call_signals").insert({
-      conversation_id: conversationId,
-      caller_id: userId,
-      callee_id: remoteUserId,
-      type: "hang-up",
-      call_type: "voice",
-      signal: JSON.stringify({ type: "hang-up" }),
-    });
-
-    this.cleanup();
   }
 
   toggleMute(muted: boolean) {
@@ -172,26 +195,35 @@ export class WebRTCManager {
     });
   }
 
+  hasPeer(): boolean {
+    return this.peer !== null;
+  }
+
   getLocalStream(): MediaStream | null {
     return this.localStream;
   }
 
-  private cleanup() {
+  /** Destroy peer and stream only — does NOT reset onSignalOverride */
+  private destroyPeerAndStream() {
     if (this.peer) {
-      this.peer.destroy();
+      try { this.peer.destroy(); } catch { /* ignore */ }
       this.peer = null;
     }
     if (this.localStream) {
       this.localStream.getTracks().forEach((t) => t.stop());
       this.localStream = null;
     }
-    this.conversationId = null;
-    this.userId = null;
-    this.remoteUserId = null;
   }
 
+  /** Full cleanup including onSignalOverride */
   destroy() {
-    this.cleanup();
+    this.destroyPeerAndStream();
+    this.onSignalOverride = null;
+    this.onSignal = null;
+    this.onStream = null;
+    this.onConnected = null;
+    this.onError = null;
+    this.onClose = null;
   }
 }
 

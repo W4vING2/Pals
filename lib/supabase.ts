@@ -87,6 +87,16 @@ export type ConversationParticipant = {
   profiles?: ProfileSummary;
 };
 
+export type MessageReaction = {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
+};
+
+export type MessageStatus = "sending" | "sent" | "failed";
+
 export type Message = {
   id: string;
   conversation_id: string;
@@ -96,6 +106,9 @@ export type Message = {
   is_read: boolean;
   created_at: string;
   profiles?: Profile;
+  reactions?: MessageReaction[];
+  /** Client-side delivery status (not stored in DB) */
+  _status?: MessageStatus;
 };
 
 export type Notification = {
@@ -176,6 +189,11 @@ export type Database = {
         { user_id: string; actor_id: string; type: "follow" | "like" | "comment" | "mention"; post_id?: string | null; comment_id?: string | null },
         Partial<{ is_read: boolean }>
       >;
+      message_reactions: TableDef<
+        MessageReaction,
+        { message_id: string; user_id: string; emoji: string },
+        Partial<MessageReaction>
+      >;
       call_signals: TableDef<
         CallSignal,
         { conversation_id: string; caller_id: string; callee_id: string; type: "offer" | "answer" | "ice-candidate" | "hang-up"; call_type: "voice" | "video"; signal: string },
@@ -186,6 +204,10 @@ export type Database = {
     Functions: {
       increment_unread_counts: {
         Args: { p_conversation_id: string; p_sender_id: string };
+        Returns: void;
+      };
+      mark_messages_read: {
+        Args: { p_conversation_id: string };
         Returns: void;
       };
     };

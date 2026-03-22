@@ -68,9 +68,11 @@ type CallState = {
   incomingCall: CallInfo | null;
   activeCall: CallInfo | null;
   callStatus: CallStatus | null;
+  callError: string | null;
   setIncomingCall: (call: CallInfo | null) => void;
   setActiveCall: (call: CallInfo | null, status?: CallStatus) => void;
   setCallStatus: (status: CallStatus | null) => void;
+  setCallError: (error: string | null) => void;
   endCall: () => void;
 };
 
@@ -78,10 +80,12 @@ export const useCallStore = create<CallState>((set) => ({
   incomingCall: null,
   activeCall: null,
   callStatus: null,
+  callError: null,
   setIncomingCall: (call) => set({ incomingCall: call }),
-  setActiveCall: (call, status) => set({ activeCall: call, callStatus: status ?? "connected" }),
+  setActiveCall: (call, status) => set({ activeCall: call, callStatus: status ?? "connected", callError: null }),
   setCallStatus: (callStatus) => set({ callStatus }),
-  endCall: () => set({ incomingCall: null, activeCall: null, callStatus: null }),
+  setCallError: (callError) => set({ callError }),
+  endCall: () => set({ incomingCall: null, activeCall: null, callStatus: null, callError: null }),
 }));
 
 // ── Create Post Store ─────────────────────────────────────

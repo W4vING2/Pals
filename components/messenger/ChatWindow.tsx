@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -14,8 +15,31 @@ import {
 } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import { OnlineIndicator } from "@/components/shared/OnlineIndicator";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/store";
+
+function formatDateSeparator(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  if (msgDate.getTime() === today.getTime()) return "Today";
+  if (msgDate.getTime() === yesterday.getTime()) return "Yesterday";
+
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "long",
+    year: msgDate.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+  });
+}
+
+function getDateKey(dateStr: string): string {
+  const d = new Date(dateStr);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
 import type { ConversationWithDetails } from "@/hooks/useMessages";
 import type { Message } from "@/lib/supabase";
 
@@ -25,6 +49,10 @@ interface ChatWindowProps {
   loading: boolean;
   onSend: (content: string, imageUrl?: string) => Promise<void>;
   onUploadImage: (file: File) => Promise<string | null>;
+  onEditMessage?: (messageId: string, newContent: string) => void;
+  onDeleteMessage?: (messageId: string) => void;
+  onToggleReaction?: (messageId: string, emoji: string) => void;
+  onRetryMessage?: (messageId: string) => void;
   onInitiateCall?: (type: "voice" | "video") => void;
   onOpenGroupSettings?: () => void;
   onBack?: () => void;
@@ -60,11 +88,16 @@ export function ChatWindow({
   loading,
   onSend,
   onUploadImage,
+  onEditMessage,
+  onDeleteMessage,
+  onToggleReaction,
+  onRetryMessage,
   onInitiateCall,
   onOpenGroupSettings,
   onBack,
 }: ChatWindowProps) {
   const { user } = useAuthStore();
+  const router = useRouter();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -104,12 +137,23 @@ export function ChatWindow({
     ? null
     : conversation?.participants.find((p) => p.user_id !== user?.id);
   const otherProfile = otherParticipant?.profiles;
+  const otherUserId = otherParticipant?.user_id;
   const chatName = isGroup
     ? conversation?.name ?? "Group"
     : otherProfile?.display_name ?? otherProfile?.username ?? "Unknown";
   const chatAvatarUrl = isGroup
     ? conversation?.avatar_url
     : otherProfile?.avatar_url;
+
+  // Realtime online status for the other user
+  const onlineUserIds = React.useMemo(
+    () => (otherUserId ? [otherUserId] : []),
+    [otherUserId]
+  );
+  const onlineMap = useOnlineStatus(onlineUserIds);
+  const isOtherOnline = otherUserId
+    ? onlineMap.get(otherUserId) ?? otherProfile?.is_online ?? false
+    : false;
 
   const handleSend = async () => {
     const trimmed = text.trim();
@@ -143,6 +187,12 @@ export function ChatWindow({
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const handleHeaderClick = () => {
+    if (!isGroup && otherProfile?.username) {
+      router.push(`/profile/${otherProfile.username}`);
+    }
+  };
+
   // Show placeholder only when no conversation is selected AND no messages are loaded
   if (!conversation && messages.length === 0 && !loading) {
     return (
@@ -173,47 +223,55 @@ export function ChatWindow({
             <ArrowLeft className="w-5 h-5" />
           </button>
         )}
-        <div className="relative shrink-0">
-          {chatAvatarUrl ? (
-            <img
-              src={chatAvatarUrl}
-              alt={chatName}
-              className="w-9 h-9 rounded-full object-cover"
-            />
-          ) : (
-            <div className={cn(
-              "w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-semibold",
-              isGroup
-                ? "bg-gradient-to-br from-purple-600 to-indigo-500"
-                : "bg-gradient-to-br from-purple-500 to-emerald-500"
-            )}>
-              {isGroup ? <Users className="size-4" /> : chatName[0]?.toUpperCase()}
-            </div>
+        <div
+          className={cn(
+            "flex items-center gap-3 flex-1 min-w-0",
+            !isGroup && otherProfile?.username && "cursor-pointer hover:opacity-80 transition-opacity"
           )}
-          {!isGroup && (
-            <OnlineIndicator
-              isOnline={otherProfile?.is_online ?? false}
-              size="sm"
-            />
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm text-[var(--text-primary)] truncate">
-            {chatName}
-          </p>
-          {isGroup ? (
-            <p className="text-xs text-[var(--text-secondary)]">
-              {conversation.participants.length} members
+          onClick={handleHeaderClick}
+        >
+          <div className="relative shrink-0">
+            {chatAvatarUrl ? (
+              <img
+                src={chatAvatarUrl}
+                alt={chatName}
+                className="w-9 h-9 rounded-full object-cover"
+              />
+            ) : (
+              <div className={cn(
+                "w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-semibold",
+                isGroup
+                  ? "bg-gradient-to-br from-purple-600 to-indigo-500"
+                  : "bg-gradient-to-br from-purple-500 to-emerald-500"
+              )}>
+                {isGroup ? <Users className="size-4" /> : chatName[0]?.toUpperCase()}
+              </div>
+            )}
+            {!isGroup && (
+              <OnlineIndicator
+                isOnline={isOtherOnline}
+                size="sm"
+              />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm text-[var(--text-primary)] truncate">
+              {chatName}
             </p>
-          ) : (
-            <p className="text-xs text-[var(--text-secondary)]">
-              {otherProfile?.is_online ? (
-                <span className="text-emerald-500">Online</span>
-              ) : otherProfile?.username ? (
-                <>@{otherProfile.username}</>
-              ) : null}
-            </p>
-          )}
+            {isGroup ? (
+              <p className="text-xs text-[var(--text-secondary)]">
+                {conversation.participants.length} members
+              </p>
+            ) : (
+              <p className="text-xs text-[var(--text-secondary)]">
+                {isOtherOnline ? (
+                  <span className="text-emerald-500">Online</span>
+                ) : otherProfile?.username ? (
+                  <>@{otherProfile.username}</>
+                ) : null}
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-1">
@@ -265,14 +323,34 @@ export function ChatWindow({
             const showAvatar =
               !isOwn &&
               (idx === 0 || messages[idx - 1].sender_id !== msg.sender_id);
+
+            // Show date separator if first message or different day from previous
+            const showDateSep =
+              idx === 0 ||
+              getDateKey(msg.created_at) !== getDateKey(messages[idx - 1].created_at);
+
             return (
-              <MessageBubble
-                key={msg.id}
-                message={msg}
-                isOwn={isOwn}
-                showAvatar={showAvatar}
-                animate={!initialMsgIdsRef.current.has(msg.id)}
-              />
+              <React.Fragment key={msg.id}>
+                {showDateSep && (
+                  <div className="flex items-center gap-3 py-2">
+                    <div className="flex-1 h-px bg-[var(--border)]" />
+                    <span className="text-[11px] font-medium text-[var(--text-secondary)] bg-[var(--bg-base)] px-3 py-1 rounded-full border border-[var(--border)]">
+                      {formatDateSeparator(msg.created_at)}
+                    </span>
+                    <div className="flex-1 h-px bg-[var(--border)]" />
+                  </div>
+                )}
+                <MessageBubble
+                  message={msg}
+                  isOwn={isOwn}
+                  showAvatar={showAvatar}
+                  animate={!initialMsgIdsRef.current.has(msg.id)}
+                  onEdit={onEditMessage}
+                  onDelete={onDeleteMessage}
+                  onToggleReaction={onToggleReaction}
+                  onRetry={onRetryMessage}
+                />
+              </React.Fragment>
             );
           })
         )}
@@ -281,12 +359,12 @@ export function ChatWindow({
 
       {/* Input area */}
       <div className="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-surface)]/80 backdrop-blur-xl">
-        <div className="flex items-end gap-2 bg-[var(--bg-input)] border border-[var(--border)] rounded-full px-4 py-2.5">
+        <div className="flex items-center gap-2 bg-[var(--bg-input)] border border-[var(--border)] rounded-full px-4 py-2">
           {/* Image upload */}
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="text-[var(--text-secondary)] hover:text-[var(--accent-blue)] transition-colors shrink-0 mb-0.5"
+            className="text-[var(--text-secondary)] hover:text-[var(--accent-blue)] transition-colors shrink-0 flex items-center justify-center w-8 h-8"
             aria-label="Upload image"
           >
             <Paperclip className="w-5 h-5" />
@@ -306,8 +384,8 @@ export function ChatWindow({
             onKeyDown={handleKeyDown}
             placeholder="Message..."
             rows={1}
-            className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] resize-none outline-none max-h-32 leading-relaxed"
-            style={{ minHeight: "20px" }}
+            className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] resize-none outline-none max-h-32 leading-normal self-center"
+            style={{ minHeight: "24px", paddingTop: "2px", paddingBottom: "2px" }}
           />
 
           {/* Send */}
@@ -321,7 +399,7 @@ export function ChatWindow({
             }
             transition={{ duration: 0.3 }}
             className={cn(
-              "shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 mb-0.5",
+              "shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150",
               text.trim()
                 ? "bg-[var(--accent-blue)] text-white hover:bg-[var(--accent-blue-hover)]"
                 : "text-[var(--text-secondary)]"

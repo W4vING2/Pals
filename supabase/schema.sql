@@ -256,6 +256,10 @@ create policy "Users can view own participations"
   on public.conversation_participants for select
   using (user_id = auth.uid());
 
+create policy "Users can view co-participants"
+  on public.conversation_participants for select
+  using (conversation_id in (select get_my_conversation_ids()));
+
 create policy "Authenticated users can join conversations"
   on public.conversation_participants for insert with check (auth.uid() is not null);
 
@@ -311,9 +315,63 @@ create policy "Participants can send messages"
     and conversation_id in (select get_my_conversation_ids())
   );
 
-create policy "Participants can update messages"
+create policy "Users can update own messages"
   on public.messages for update
-  using (conversation_id in (select get_my_conversation_ids()));
+  using (sender_id = auth.uid());
+
+create policy "Users can delete own messages"
+  on public.messages for delete
+  using (sender_id = auth.uid());
+
+-- ── message_reactions ─────────────────────────────────────────
+create table if not exists public.message_reactions (
+  id          uuid primary key default gen_random_uuid(),
+  message_id  uuid not null references public.messages(id) on delete cascade,
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  emoji       text not null,
+  created_at  timestamptz not null default now(),
+  unique(message_id, user_id, emoji)
+);
+
+create index idx_message_reactions_message on public.message_reactions(message_id);
+create index idx_message_reactions_user    on public.message_reactions(user_id);
+
+alter table public.message_reactions enable row level security;
+
+create policy "Users can view reactions"
+  on public.message_reactions for select
+  using (
+    message_id in (
+      select m.id from public.messages m
+      where m.conversation_id in (select get_my_conversation_ids())
+    )
+  );
+
+create policy "Users can add reactions"
+  on public.message_reactions for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can remove reactions"
+  on public.message_reactions for delete
+  using (auth.uid() = user_id);
+
+-- Helper function: mark messages as read (security definer bypasses sender-only RLS)
+create or replace function mark_messages_read(
+  p_conversation_id uuid
+) returns void language plpgsql security definer as $$
+begin
+  if exists (
+    select 1 from public.conversation_participants
+    where conversation_id = p_conversation_id and user_id = auth.uid()
+  ) then
+    update public.messages
+    set is_read = true
+    where conversation_id = p_conversation_id
+      and sender_id <> auth.uid()
+      and is_read = false;
+  end if;
+end;
+$$;
 
 -- Helper function: increment unread counts for all participants except sender
 create or replace function increment_unread_counts(
@@ -399,7 +457,9 @@ for each row execute function cleanup_old_call_signals();
 alter publication supabase_realtime add table public.posts;
 alter publication supabase_realtime add table public.messages;
 alter publication supabase_realtime add table public.notifications;
-alter publication supabase_realtime add table public.call_signals;
+-- call_signals removed from realtime (using Broadcast instead)
+alter publication supabase_realtime add table public.message_reactions;
+alter publication supabase_realtime add table public.follows;
 alter publication supabase_realtime add table public.likes;
 alter publication supabase_realtime add table public.comments;
 alter publication supabase_realtime add table public.conversations;
