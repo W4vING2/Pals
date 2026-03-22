@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Pals</string>
+    <string name="title_activity_main">Pals</string>
+    <string name="package_name">com.waving.pals</string>
+    <string name="custom_url_scheme">com.waving.pals</string>
+</resources>
