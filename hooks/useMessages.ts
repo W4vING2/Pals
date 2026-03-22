@@ -22,10 +22,16 @@ export function useMessages() {
   const channelRef = useRef<ReturnType<ReturnType<typeof getSupabaseBrowserClient>["channel"]> | null>(null);
   const reactionsChannelRef = useRef<ReturnType<ReturnType<typeof getSupabaseBrowserClient>["channel"]> | null>(null);
   const convDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userRef = useRef(user);
+  userRef.current = user;
+  const activeConvIdRef = useRef(activeConversationId);
+  activeConvIdRef.current = activeConversationId;
+  const hasLoadedConvsRef = useRef(false);
 
   const loadConversations = useCallback(async () => {
     if (!user) return;
-    setLoadingConversations(true);
+    // Only show loading spinner on first load, not background refreshes
+    if (!hasLoadedConvsRef.current) setLoadingConversations(true);
     const supabase = getSupabaseBrowserClient();
 
     const { data: rawData, error } = await supabase
@@ -95,6 +101,7 @@ export function useMessages() {
     });
 
     setConversations(result);
+    hasLoadedConvsRef.current = true;
     setLoadingConversations(false);
   }, [user]);
 
@@ -498,14 +505,16 @@ export function useMessages() {
             )
           );
           // If it's from someone else, mark as read immediately (user is viewing chat)
-          if (msg.sender_id !== user?.id && user && activeConversationId) {
+          const currentUser = userRef.current;
+          const currentConvId = activeConvIdRef.current;
+          if (msg.sender_id !== currentUser?.id && currentUser && currentConvId) {
             await Promise.all([
-              supabase.rpc("mark_messages_read", { p_conversation_id: activeConversationId }),
+              supabase.rpc("mark_messages_read", { p_conversation_id: currentConvId }),
               supabase
                 .from("conversation_participants")
                 .update({ unread_count: 0, last_read_at: new Date().toISOString() })
-                .eq("conversation_id", activeConversationId)
-                .eq("user_id", user.id),
+                .eq("conversation_id", currentConvId)
+                .eq("user_id", currentUser.id),
             ]);
           }
         }
@@ -542,7 +551,11 @@ export function useMessages() {
           setMessages((prev) => prev.filter((m) => m.id !== deleted.id));
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR") {
+          console.warn("Messages channel error — will auto-reconnect");
+        }
+      });
 
     channelRef.current = channel;
 
@@ -598,7 +611,11 @@ export function useMessages() {
           );
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR") {
+          console.warn("Reactions channel error");
+        }
+      });
 
     reactionsChannelRef.current = channel;
 
@@ -608,8 +625,13 @@ export function useMessages() {
   }, [activeConversationId]);
 
   // Subscribe to conversation list updates (debounced) — use FILTERED subscription
+  // Uses userIdRef to avoid re-creating channel on token refresh
+  const userIdRef = useRef(user?.id);
+  userIdRef.current = user?.id;
+
   useEffect(() => {
-    if (!user) return;
+    const uid = userIdRef.current;
+    if (!uid) return;
     const supabase = getSupabaseBrowserClient();
 
     const debouncedReload = () => {
@@ -618,14 +640,14 @@ export function useMessages() {
     };
 
     const channel = supabase
-      .channel(`conv-updates:${user.id}`)
+      .channel(`conv-updates:${uid}`)
       .on(
         "postgres_changes",
         {
           event: "UPDATE",
           schema: "public",
           table: "conversation_participants",
-          filter: `user_id=eq.${user.id}`,
+          filter: `user_id=eq.${uid}`,
         },
         debouncedReload
       )
@@ -635,17 +657,22 @@ export function useMessages() {
           event: "INSERT",
           schema: "public",
           table: "conversation_participants",
-          filter: `user_id=eq.${user.id}`,
+          filter: `user_id=eq.${uid}`,
         },
         debouncedReload
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR") {
+          console.warn("Conversation updates channel error");
+        }
+      });
 
     return () => {
       if (convDebounceRef.current) clearTimeout(convDebounceRef.current);
       supabase.removeChannel(channel);
     };
-  }, [user, loadConversations]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadConversations]);
 
   useEffect(() => {
     if (user) {

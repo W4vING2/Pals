@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
@@ -18,7 +18,8 @@ const AUTH_PATHS = ["/auth"];
 
 function SplashScreen({ onFinished }: { onFinished: () => void }) {
   useEffect(() => {
-    const timer = setTimeout(onFinished, 1800);
+    // Safety: always dismiss after 3s max
+    const timer = setTimeout(onFinished, 3000);
     return () => clearTimeout(timer);
   }, [onFinished]);
 
@@ -26,7 +27,7 @@ function SplashScreen({ onFinished }: { onFinished: () => void }) {
     <motion.div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-[var(--bg-base)]"
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.4, ease: "easeOut" }}
+      transition={{ duration: 0.35, ease: "easeOut" }}
     >
       <motion.div
         className="flex flex-col items-center gap-3"
@@ -35,7 +36,7 @@ function SplashScreen({ onFinished }: { onFinished: () => void }) {
           opacity: [0, 1, 1],
         }}
         transition={{
-          duration: 1,
+          duration: 0.8,
           times: [0, 0.5, 1],
           ease: "easeOut",
         }}
@@ -48,7 +49,7 @@ function SplashScreen({ onFinished }: { onFinished: () => void }) {
             scale: [0.5, 1.15, 1],
           }}
           transition={{
-            duration: 1,
+            duration: 0.8,
             times: [0, 0.45, 1],
             ease: [0.22, 1, 0.36, 1],
           }}
@@ -57,7 +58,7 @@ function SplashScreen({ onFinished }: { onFinished: () => void }) {
           className="gradient-text text-2xl font-bold tracking-tight"
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5, duration: 0.5 }}
+          transition={{ delay: 0.4, duration: 0.4 }}
         >
           Pals
         </motion.span>
@@ -75,17 +76,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { open: createPostOpen, setOpen: setCreatePostOpen } = useCreatePostStore();
 
   const [showSplash, setShowSplash] = useState(true);
+  const splashMinTimeRef = useRef(false);
+
+  // Minimum splash time (800ms for animation), then wait for auth
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      splashMinTimeRef.current = true;
+    }, 800);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Dismiss splash when auth is done AND minimum time has passed
+  useEffect(() => {
+    if (!loading && showSplash) {
+      if (splashMinTimeRef.current) {
+        setShowSplash(false);
+      } else {
+        // Auth finished fast — wait for min animation time
+        const timer = setTimeout(() => setShowSplash(false), 800);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [loading, showSplash]);
 
   const isAuthPage = AUTH_PATHS.some((p) => pathname.startsWith(p));
   const showNav = !isAuthPage && !!user && !loading;
-
-  // Hide splash once auth finishes loading OR after timeout
-  useEffect(() => {
-    if (!loading) {
-      // Auth resolved — let the splash animation finish naturally
-      // (SplashScreen calls onFinished after 1800ms)
-    }
-  }, [loading]);
 
   return (
     <>

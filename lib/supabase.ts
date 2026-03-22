@@ -243,6 +243,19 @@ export function getSupabaseBrowserClient() {
           autoRefreshToken: true,
           detectSessionInUrl: true,
         },
+        realtime: {
+          params: {
+            eventsPerSecond: 10,
+          },
+        },
+        global: {
+          fetch: (...args) => {
+            return fetch(...args).catch((err) => {
+              console.warn("Supabase fetch error:", err.message);
+              throw err;
+            });
+          },
+        },
       }
     );
   }

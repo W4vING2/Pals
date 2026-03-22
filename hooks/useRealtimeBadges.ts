@@ -14,6 +14,7 @@ export function useRealtimeBadges() {
   const { setUnreadMessagesCount } = useUnreadMessagesStore();
   const { setUnreadCount } = useNotificationStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadUnreadMessages = useCallback(async () => {
     if (!user) return;
@@ -79,10 +80,19 @@ export function useRealtimeBadges() {
         },
         debouncedReload
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR") {
+          console.warn("Badges channel error — retrying in 5s");
+          retryRef.current = setTimeout(() => {
+            supabase.removeChannel(channel);
+            // Re-subscribing will happen on next effect cycle
+          }, 5000);
+        }
+      });
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (retryRef.current) clearTimeout(retryRef.current);
       supabase.removeChannel(channel);
     };
   }, [user, loadUnreadMessages, loadUnreadNotifications]);

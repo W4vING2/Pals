@@ -11,8 +11,10 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 /**
  * Call signaling via Supabase Broadcast.
  * Each user subscribes to `call:{userId}` to receive signals.
- * To send signals to a remote user, we reuse a persistent outbound channel
- * for the duration of the call.
+ *
+ * IMPORTANT: The inbound channel subscription is a module-level singleton
+ * to avoid duplicate channels when useCalls() is instantiated from multiple
+ * components (MessagesPage, IncomingCallBanner, CallOverlay).
  */
 
 type BroadcastSignal = {
@@ -22,6 +24,173 @@ type BroadcastSignal = {
   call_type: "voice" | "video";
   signal: string;
 };
+
+// ── Module-level singleton state for inbound channel ──────────────
+let inboundChannel: RealtimeChannel | null = null;
+let inboundUserId: string | null = null;
+const pendingSignals: string[] = [];
+/** Timestamp of last decline — ignore retry offers within 10s */
+let lastDeclineAt = 0;
+/** Buffered answer signal — if answer arrives before activeCall is set */
+let pendingAnswer: string | null = null;
+
+// ── Module-level outbound channel state ───────────────────────────
+let outboundChannel: RealtimeChannel | null = null;
+let outboundReady = false;
+let outboundQueue: BroadcastSignal[] = [];
+const offerRetryTimers: ReturnType<typeof setTimeout>[] = [];
+
+function cleanupOutbound() {
+  for (const t of offerRetryTimers) clearTimeout(t);
+  offerRetryTimers.length = 0;
+
+  if (outboundChannel) {
+    const supabase = getSupabaseBrowserClient();
+    supabase.removeChannel(outboundChannel);
+    outboundChannel = null;
+  }
+  outboundReady = false;
+  outboundQueue = [];
+}
+
+function setupOutbound(remoteUserId: string): Promise<void> {
+  cleanupOutbound();
+  const supabase = getSupabaseBrowserClient();
+  const channel = supabase.channel(`call:${remoteUserId}`);
+  outboundChannel = channel;
+
+  return new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error("Outbound channel subscription timeout"));
+    }, 10000);
+
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        clearTimeout(timeout);
+        outboundReady = true;
+        // Flush queued signals
+        for (const sig of outboundQueue) {
+          channel.send({ type: "broadcast", event: "signal", payload: sig });
+        }
+        outboundQueue = [];
+        resolve();
+      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        clearTimeout(timeout);
+        reject(new Error(`Outbound channel failed: ${status}`));
+      }
+    });
+  });
+}
+
+function sendSignal(signal: BroadcastSignal) {
+  if (outboundChannel && outboundReady) {
+    outboundChannel.send({ type: "broadcast", event: "signal", payload: signal });
+  } else {
+    outboundQueue.push(signal);
+  }
+}
+
+function setupInboundChannel(userId: string) {
+  // Already subscribed for this user — skip
+  if (inboundChannel && inboundUserId === userId) return;
+
+  // Clean up previous
+  if (inboundChannel) {
+    const supabase = getSupabaseBrowserClient();
+    supabase.removeChannel(inboundChannel);
+    inboundChannel = null;
+    inboundUserId = null;
+  }
+
+  const supabase = getSupabaseBrowserClient();
+
+  const channel = supabase
+    .channel(`call:${userId}`, {
+      config: { broadcast: { self: false } },
+    })
+    .on("broadcast", { event: "signal" }, async ({ payload }: { payload: BroadcastSignal }) => {
+      const signal = payload;
+
+      if (signal.type === "offer") {
+        // Read FRESH store state for offer handling
+        const s = useCallStore.getState();
+        if (s.activeCall || s.incomingCall) return;
+
+        // Ignore retry offers shortly after a decline
+        if (Date.now() - lastDeclineAt < 10000) return;
+
+        pendingSignals.length = 0;
+
+        const { data: callerProfile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", signal.from_id)
+          .single();
+
+        // Re-check FRESH state after async fetch
+        const latest = useCallStore.getState();
+        if (latest.activeCall || latest.incomingCall) return;
+        if (Date.now() - lastDeclineAt < 10000) return;
+
+        latest.setIncomingCall({
+          callerId: signal.from_id,
+          callerProfile: callerProfile as Profile | null,
+          remoteUserId: signal.from_id,
+          remoteProfile: callerProfile as Profile | null,
+          conversationId: signal.conversation_id,
+          type: signal.call_type,
+          signal: signal.signal,
+        });
+      } else if (signal.type === "answer") {
+        // Stop offer retries — call was answered
+        for (const t of offerRetryTimers) clearTimeout(t);
+        offerRetryTimers.length = 0;
+
+        // Read FRESH store state — activeCall must be set
+        const s = useCallStore.getState();
+        const manager = getWebRTCManager();
+        if (s.activeCall && manager.hasPeer()) {
+          manager.feedSignal(signal.signal);
+        } else {
+          // Answer arrived before activeCall is fully set (race on video calls)
+          // Buffer it and feed when peer is ready
+          pendingAnswer = signal.signal;
+        }
+      } else if (signal.type === "ice-candidate") {
+        const manager = getWebRTCManager();
+        if (manager.hasPeer()) {
+          manager.feedSignal(signal.signal);
+        } else {
+          pendingSignals.push(signal.signal);
+        }
+      } else if (signal.type === "hang-up") {
+        pendingSignals.length = 0;
+        const manager = getWebRTCManager();
+        manager.destroy();
+        useCallStore.getState().endCall();
+        cleanupOutbound();
+      }
+    })
+    .subscribe((status) => {
+      if (status === "CHANNEL_ERROR") {
+        console.warn("Call inbound channel error — will auto-reconnect");
+      }
+    });
+
+  inboundChannel = channel;
+  inboundUserId = userId;
+}
+
+function teardownInboundChannel() {
+  if (inboundChannel) {
+    const supabase = getSupabaseBrowserClient();
+    supabase.removeChannel(inboundChannel);
+    inboundChannel = null;
+    inboundUserId = null;
+  }
+}
+
+// ── Hook ──────────────────────────────────────────────────────────
 
 export function useCalls() {
   const { user } = useAuthStore();
@@ -37,117 +206,28 @@ export function useCalls() {
     endCall,
   } = useCallStore();
 
-  const activeCallRef = useRef(activeCall);
-  activeCallRef.current = activeCall;
-
-  const incomingCallRef = useRef(incomingCall);
-  incomingCallRef.current = incomingCall;
-
-  const pendingSignalsRef = useRef<string[]>([]);
-
-  // Persistent outbound channel for sending signals during a call
-  const outboundChannelRef = useRef<RealtimeChannel | null>(null);
-  const outboundReadyRef = useRef(false);
-  const outboundQueueRef = useRef<BroadcastSignal[]>([]);
-
-  // Clean up outbound channel
-  const cleanupOutbound = useCallback(() => {
-    if (outboundChannelRef.current) {
-      const supabase = getSupabaseBrowserClient();
-      supabase.removeChannel(outboundChannelRef.current);
-      outboundChannelRef.current = null;
-    }
-    outboundReadyRef.current = false;
-    outboundQueueRef.current = [];
-  }, []);
-
-  // Set up outbound channel to a specific user
-  const setupOutbound = useCallback((remoteUserId: string) => {
-    cleanupOutbound();
-    const supabase = getSupabaseBrowserClient();
-    const channel = supabase.channel(`call:${remoteUserId}`);
-    outboundChannelRef.current = channel;
-
-    channel.subscribe((status) => {
-      if (status === "SUBSCRIBED") {
-        outboundReadyRef.current = true;
-        // Flush queued signals
-        for (const sig of outboundQueueRef.current) {
-          channel.send({ type: "broadcast", event: "signal", payload: sig });
-        }
-        outboundQueueRef.current = [];
-      }
-    });
-  }, [cleanupOutbound]);
-
-  // Send a signal via the persistent outbound channel
-  const sendSignal = useCallback((signal: BroadcastSignal) => {
-    const channel = outboundChannelRef.current;
-    if (channel && outboundReadyRef.current) {
-      channel.send({ type: "broadcast", event: "signal", payload: signal });
-    } else {
-      // Queue for when channel is ready
-      outboundQueueRef.current.push(signal);
-    }
-  }, []);
-
-  // Listen for incoming call signals via Broadcast
+  // Set up singleton inbound channel
   useEffect(() => {
     if (!user) return;
-    const supabase = getSupabaseBrowserClient();
-
-    const channel = supabase
-      .channel(`call:${user.id}`, {
-        config: { broadcast: { self: false } },
-      })
-      .on("broadcast", { event: "signal" }, async ({ payload }: { payload: BroadcastSignal }) => {
-        const signal = payload;
-
-        if (signal.type === "offer") {
-          if (activeCallRef.current || incomingCallRef.current) return;
-          pendingSignalsRef.current = [];
-
-          const { data: callerProfile } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", signal.from_id)
-            .single();
-
-          setIncomingCall({
-            callerId: signal.from_id,
-            callerProfile: callerProfile as Profile | null,
-            remoteUserId: signal.from_id,
-            remoteProfile: callerProfile as Profile | null,
-            conversationId: signal.conversation_id,
-            type: signal.call_type,
-            signal: signal.signal,
-          });
-        } else if (signal.type === "answer") {
-          if (activeCallRef.current) {
-            const manager = getWebRTCManager();
-            manager.feedSignal(signal.signal);
-          }
-        } else if (signal.type === "ice-candidate") {
-          const manager = getWebRTCManager();
-          if (manager.hasPeer()) {
-            manager.feedSignal(signal.signal);
-          } else {
-            pendingSignalsRef.current.push(signal.signal);
-          }
-        } else if (signal.type === "hang-up") {
-          pendingSignalsRef.current = [];
-          const manager = getWebRTCManager();
-          manager.destroy();
-          endCall();
-          cleanupOutbound();
-        }
-      })
-      .subscribe();
-
+    setupInboundChannel(user.id);
+    // Cleanup only on unmount or user change — but since it's a singleton,
+    // it stays alive as long as at least one useCalls instance exists.
+    // We track via a ref count.
     return () => {
-      supabase.removeChannel(channel);
+      // Don't tear down — other instances may still be alive.
+      // Teardown happens when user logs out (user becomes null).
     };
-  }, [user, setIncomingCall, endCall, cleanupOutbound]);
+  }, [user]);
+
+  // Teardown when user logs out
+  const prevUserRef = useRef(user);
+  useEffect(() => {
+    if (prevUserRef.current && !user) {
+      teardownInboundChannel();
+      cleanupOutbound();
+    }
+    prevUserRef.current = user;
+  }, [user]);
 
   const initiateCall = useCallback(
     async (conversationId: string, remoteUserId: string, callType: CallType) => {
@@ -164,26 +244,46 @@ export function useCalls() {
       try {
         setCallError(null);
 
-        // Set up persistent outbound channel to remote user
-        setupOutbound(remoteUserId);
+        // Set up persistent outbound channel — WAIT for it to be ready
+        await setupOutbound(remoteUserId);
 
         // Override signal sending to use Broadcast
+        // For offers: resend multiple times to handle Broadcast delivery failures on mobile
         manager.onSignalOverride = (signalData) => {
           const signalType: "offer" | "answer" | "ice-candidate" =
             signalData.type === "offer" ? "offer"
             : signalData.type === "answer" ? "answer"
             : "ice-candidate";
 
-          sendSignal({
+          const sig: BroadcastSignal = {
             conversation_id: conversationId,
             from_id: user.id,
             type: signalType,
             call_type: callType,
             signal: JSON.stringify(signalData),
-          });
+          };
+
+          sendSignal(sig);
+
+          // Retry offers: resend 3 more times with increasing delays
+          if (signalType === "offer") {
+            const retryDelays = [1500, 3000, 5000];
+            for (const delay of retryDelays) {
+              const timer = setTimeout(() => {
+                const store = useCallStore.getState();
+                if (store.activeCall?.conversationId === conversationId && store.callStatus === "ringing") {
+                  sendSignal(sig);
+                }
+              }, delay);
+              offerRetryTimers.push(timer);
+            }
+          }
         };
 
         const localStream = await manager.initiateCall(conversationId, user.id, remoteUserId, callType);
+
+        // Clear any pending answer from previous calls
+        pendingAnswer = null;
 
         setActiveCall(
           {
@@ -197,7 +297,30 @@ export function useCalls() {
           "ringing"
         );
 
-        manager.onConnected = () => setCallStatus("connected");
+        // Feed any answer that arrived while we were setting up (race condition on fast networks)
+        if (pendingAnswer && manager.hasPeer()) {
+          manager.feedSignal(pendingAnswer);
+          pendingAnswer = null;
+        }
+
+        // Also check for pending answer after a short delay (covers async SimplePeer timing)
+        const answerCheckTimer = setInterval(() => {
+          if (pendingAnswer && manager.hasPeer()) {
+            manager.feedSignal(pendingAnswer);
+            pendingAnswer = null;
+            clearInterval(answerCheckTimer);
+          }
+          // Stop checking after call is no longer ringing
+          const cs = useCallStore.getState().callStatus;
+          if (cs !== "ringing") {
+            clearInterval(answerCheckTimer);
+          }
+        }, 200);
+
+        manager.onConnected = () => {
+          clearInterval(answerCheckTimer);
+          setCallStatus("connected");
+        };
         manager.onError = (err) => {
           console.error("WebRTC error:", err);
           setCallError(err.message);
@@ -216,7 +339,7 @@ export function useCalls() {
         return null;
       }
     },
-    [user, setActiveCall, setCallStatus, setCallError, endCall, setupOutbound, sendSignal, cleanupOutbound]
+    [user, setActiveCall, setCallStatus, setCallError, endCall]
   );
 
   const acceptCall = useCallback(async () => {
@@ -227,8 +350,8 @@ export function useCalls() {
     try {
       setCallError(null);
 
-      // Set up persistent outbound channel to caller
-      setupOutbound(incomingCall.callerId);
+      // Set up persistent outbound channel — WAIT for it to be ready
+      await setupOutbound(incomingCall.callerId);
 
       manager.onSignalOverride = (signalData) => {
         const signalType: "offer" | "answer" | "ice-candidate" =
@@ -253,12 +376,12 @@ export function useCalls() {
         incomingCall.type
       );
 
-      // Feed buffered ICE candidates
-      if (pendingSignalsRef.current.length > 0) {
-        for (const sig of pendingSignalsRef.current) {
+      // Feed buffered ICE candidates from the singleton store
+      if (pendingSignals.length > 0) {
+        for (const sig of pendingSignals) {
           manager.feedSignal(sig);
         }
-        pendingSignalsRef.current = [];
+        pendingSignals.length = 0;
       }
 
       setActiveCall({
@@ -287,10 +410,13 @@ export function useCalls() {
       cleanupOutbound();
       return null;
     }
-  }, [user, incomingCall, setActiveCall, setIncomingCall, setCallStatus, setCallError, endCall, setupOutbound, sendSignal, cleanupOutbound]);
+  }, [user, incomingCall, setActiveCall, setIncomingCall, setCallStatus, setCallError, endCall]);
 
   const declineCall = useCallback(async () => {
     if (!user || !incomingCall) return;
+
+    // Mark decline time to suppress retry offers
+    lastDeclineAt = Date.now();
 
     // Quick one-shot send for hang-up
     const supabase = getSupabaseBrowserClient();
@@ -333,8 +459,8 @@ export function useCalls() {
       manager.destroy();
       endCall();
       cleanupOutbound();
-    }, 100);
-  }, [user, activeCall, endCall, sendSignal, cleanupOutbound]);
+    }, 150);
+  }, [user, activeCall, endCall]);
 
   return {
     incomingCall,

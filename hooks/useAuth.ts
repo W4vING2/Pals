@@ -53,6 +53,16 @@ async function handleAuthError(supabase: ReturnType<typeof getSupabaseBrowserCli
   }
 }
 
+/** Race a promise against a timeout */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout")), ms)
+    ),
+  ]);
+}
+
 export function useAuth() {
   const { user, profile, setUser, setProfile, signOut: storeSignOut } = useAuthStore();
   const [loading, setLoading] = useState(!user); // already loaded if user in store
@@ -67,26 +77,36 @@ export function useAuth() {
 
     const supabase = getSupabaseBrowserClient();
 
-    // Get initial session once
-    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
-      // Handle invalid/expired refresh token
-      if (error) {
-        console.warn("Session error, clearing auth state:", error.message);
-        await handleAuthError(supabase);
-        setUser(null);
-        setProfile(null);
-        setLoading(false);
-        return;
-      }
+    // Get initial session with timeout (8s max)
+    withTimeout(supabase.auth.getSession(), 8000)
+      .then(async ({ data: { session }, error }) => {
+        // Handle invalid/expired refresh token
+        if (error) {
+          console.warn("Session error, clearing auth state:", error.message);
+          await handleAuthError(supabase);
+          setUser(null);
+          setProfile(null);
+          setLoading(false);
+          return;
+        }
 
-      const u = session?.user ?? null;
-      setUser(u);
-      if (u) {
-        const p = await loadOrCreateProfile(u);
-        if (p) setProfile(p);
-      }
-      setLoading(false);
-    });
+        const u = session?.user ?? null;
+        setUser(u);
+        if (u) {
+          try {
+            const p = await withTimeout(loadOrCreateProfile(u), 8000);
+            if (p) setProfile(p);
+          } catch {
+            console.warn("Failed to load profile, continuing without it");
+          }
+        }
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.warn("Auth getSession timeout/error:", err);
+        // Don't block the app — set loading false anyway
+        setLoading(false);
+      });
 
     // Single auth state listener for the whole app
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -113,8 +133,12 @@ export function useAuth() {
         const u = session?.user ?? null;
         setUser(u);
         if (u && event !== "INITIAL_SESSION") {
-          const p = await loadOrCreateProfile(u);
-          if (p) setProfile(p);
+          try {
+            const p = await loadOrCreateProfile(u);
+            if (p) setProfile(p);
+          } catch {
+            console.warn("Failed to load profile on auth change");
+          }
         }
         if (!u) setProfile(null);
         setLoading(false);
