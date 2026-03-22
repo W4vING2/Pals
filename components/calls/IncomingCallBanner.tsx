@@ -22,7 +22,7 @@ export function IncomingCallBanner() {
   const callerName =
     incomingCall?.callerProfile?.display_name ??
     incomingCall?.callerProfile?.username ??
-    "Unknown";
+    "Неизвестный";
 
   const callerAvatar = incomingCall?.callerProfile?.avatar_url;
   const isVideo = incomingCall?.type === "video";
@@ -54,7 +54,7 @@ export function IncomingCallBanner() {
               ) : (
                 <Phone className="w-4 h-4" />
               )}
-              {isVideo ? "Incoming video call" : "Incoming voice call"}
+              {isVideo ? "Входящий видеозвонок" : "Входящий аудиозвонок"}
             </motion.p>
 
             {/* Avatar with pulse rings */}
@@ -159,7 +159,7 @@ export function IncomingCallBanner() {
                 >
                   <PhoneOff className="w-7 h-7" />
                 </motion.button>
-                <span className="text-xs text-[var(--text-secondary)]">Decline</span>
+                <span className="text-xs text-[var(--text-secondary)]">Отклонить</span>
               </div>
 
               {/* Accept */}
@@ -181,7 +181,7 @@ export function IncomingCallBanner() {
                 >
                   <Phone className="w-7 h-7" />
                 </motion.button>
-                <span className="text-xs text-[var(--text-secondary)]">Accept</span>
+                <span className="text-xs text-[var(--text-secondary)]">Принять</span>
               </div>
             </motion.div>
           </div>

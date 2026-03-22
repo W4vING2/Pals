@@ -25,7 +25,7 @@ interface PostCardProps {
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
+  if (minutes < 1) return "сейчас";
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h`;
@@ -305,7 +305,7 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority }:
                         value={commentText}
                         onChange={(e) => setCommentText(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter") submitComment(); }}
-                        placeholder="Write a comment..."
+                        placeholder="Написать комментарий..."
                         className="flex-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-full px-3 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none input-focus transition-colors"
                       />
                       <button

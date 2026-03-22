@@ -337,7 +337,7 @@ export function ProfileHeader({
             className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-xl text-xs font-medium text-white hover:bg-black/60 transition-all duration-150"
           >
             <Camera className="size-3.5" />
-            {uploadingCover ? "Uploading..." : "Edit cover"}
+            {uploadingCover ? "Загрузка..." : "Обложка"}
           </button>
         )}
         <input
@@ -413,7 +413,7 @@ export function ProfileHeader({
                 onClick={() => setEditing(!editing)}
                 className="rounded-xl border-[var(--border)] text-[var(--text-primary)]"
               >
-                {editing ? "Cancel" : "Edit profile"}
+                {editing ? "Отмена" : "Редактировать"}
               </Button>
             ) : (
               <>
@@ -424,7 +424,7 @@ export function ProfileHeader({
                   className="rounded-xl text-[var(--text-secondary)]"
                 >
                   <MessageCircle className="size-4" />
-                  Message
+                  Сообщение
                 </Button>
                 <motion.div whileTap={{ scale: 0.95 }}>
                   <Button
@@ -454,7 +454,7 @@ export function ProfileHeader({
                         exit={{ opacity: 0, y: -6 }}
                         transition={{ duration: 0.15 }}
                       >
-                        {following ? "Following" : "Follow"}
+                        {following ? "Подписки" : "Подписаться"}
                       </motion.span>
                     </AnimatePresence>
                   </Button>
@@ -470,16 +470,16 @@ export function ProfileHeader({
             <DialogContent className="bg-[var(--bg-surface)] border-[var(--border)] text-[var(--text-primary)] sm:max-w-md">
               <DialogHeader>
                 <DialogTitle className="text-[var(--text-primary)]">
-                  Edit profile
+                  Редактировать профиль
                 </DialogTitle>
                 <DialogDescription className="text-[var(--text-secondary)]">
-                  Update your profile information
+                  Обновите информацию о профиле
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--text-secondary)]">
-                    Display name
+                    Имя
                   </label>
                   <Input
                     value={displayName}
@@ -489,7 +489,7 @@ export function ProfileHeader({
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--text-secondary)]">
-                    Bio
+                    О себе
                   </label>
                   <textarea
                     value={bio}
@@ -502,7 +502,7 @@ export function ProfileHeader({
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--text-secondary)]">
-                      Location
+                      Местоположение
                     </label>
                     <Input
                       value={location}
@@ -512,7 +512,7 @@ export function ProfileHeader({
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--text-secondary)]">
-                      Website
+                      Сайт
                     </label>
                     <Input
                       value={website}
@@ -528,7 +528,7 @@ export function ProfileHeader({
                     onClick={() => setEditing(false)}
                     className="rounded-xl text-[var(--text-secondary)]"
                   >
-                    Cancel
+                    Отмена
                   </Button>
                   <Button
                     size="sm"
@@ -539,7 +539,7 @@ export function ProfileHeader({
                     {saving && (
                       <Loader2 className="size-3.5 animate-spin mr-1" />
                     )}
-                    Save
+                    Сохранить
                   </Button>
                 </div>
               </div>
@@ -591,7 +591,7 @@ export function ProfileHeader({
               value={profile.posts_count ?? 0}
               className="text-lg font-bold text-[var(--text-primary)]"
             />
-            <p className="text-xs text-[var(--text-secondary)]">Posts</p>
+            <p className="text-xs text-[var(--text-secondary)]">Посты</p>
           </div>
           <button
             onClick={() => openFollowModal("followers")}
@@ -601,7 +601,7 @@ export function ProfileHeader({
               value={localFollowersCount}
               className="text-lg font-bold text-[var(--text-primary)]"
             />
-            <p className="text-xs text-[var(--text-secondary)]">Followers</p>
+            <p className="text-xs text-[var(--text-secondary)]">Подписчики</p>
           </button>
           <button
             onClick={() => openFollowModal("following")}
@@ -611,7 +611,7 @@ export function ProfileHeader({
               value={localFollowingCount}
               className="text-lg font-bold text-[var(--text-primary)]"
             />
-            <p className="text-xs text-[var(--text-secondary)]">Following</p>
+            <p className="text-xs text-[var(--text-secondary)]">Подписки</p>
           </button>
         </div>
       </div>
@@ -625,14 +625,14 @@ export function ProfileHeader({
       >
         <DialogContent className="bg-[var(--bg-surface)] border-[var(--border)] text-[var(--text-primary)] sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="capitalize text-[var(--text-primary)]">
-              {showFollowModal}
+            <DialogTitle className="text-[var(--text-primary)]">
+              {showFollowModal === "followers" ? "Подписчики" : "Подписки"}
             </DialogTitle>
           </DialogHeader>
           <div className="max-h-80 overflow-y-auto -mx-4 divide-y divide-[var(--border)]">
             {followList.length === 0 ? (
               <p className="text-center text-[var(--text-secondary)] text-sm py-10">
-                No users yet
+                Пока нет пользователей
               </p>
             ) : (
               followList.map((u) => (

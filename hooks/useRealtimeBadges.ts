@@ -15,6 +15,8 @@ export function useRealtimeBadges() {
   const { setUnreadCount } = useNotificationStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userIdRef = useRef(user?.id);
+  userIdRef.current = user?.id;
 
   const loadUnreadMessages = useCallback(async () => {
     if (!user) return;
@@ -49,15 +51,32 @@ export function useRealtimeBadges() {
     } catch { /* ignore */ }
   }, [user, setUnreadCount]);
 
-  // Initial loads
+  // Initial loads + visibility change recovery
   useEffect(() => {
     loadUnreadMessages();
     loadUnreadNotifications();
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        // Refresh badges when app wakes up from sleep
+        setTimeout(() => {
+          loadUnreadMessages();
+          loadUnreadNotifications();
+        }, 600);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [loadUnreadMessages, loadUnreadNotifications]);
 
   // Realtime: message badge only — simple filter on own user_id
+  // Uses userIdRef to avoid channel recreation on token refresh
   useEffect(() => {
-    if (!user) return;
+    const uid = userIdRef.current;
+    if (!uid) return;
     const supabase = getSupabaseBrowserClient();
 
     const debouncedReload = () => {
@@ -69,14 +88,14 @@ export function useRealtimeBadges() {
     };
 
     const channel = supabase
-      .channel(`badges:${user.id}`)
+      .channel(`badges:${uid}`)
       .on(
         "postgres_changes",
         {
           event: "UPDATE",
           schema: "public",
           table: "conversation_participants",
-          filter: `user_id=eq.${user.id}`,
+          filter: `user_id=eq.${uid}`,
         },
         debouncedReload
       )
@@ -95,5 +114,6 @@ export function useRealtimeBadges() {
       if (retryRef.current) clearTimeout(retryRef.current);
       supabase.removeChannel(channel);
     };
-  }, [user, loadUnreadMessages, loadUnreadNotifications]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadUnreadMessages, loadUnreadNotifications]);
 }

@@ -12,10 +12,15 @@ type AuthState = {
   signOut: () => void;
 };
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   profile: null,
-  setUser: (user) => set({ user }),
+  setUser: (user) => {
+    const current = get().user;
+    // Skip update if it's the same user (prevents cascade on token refresh)
+    if (current && user && current.id === user.id) return;
+    set({ user });
+  },
   setProfile: (profile) => set({ profile }),
   signOut: () => set({ user: null, profile: null }),
 }));

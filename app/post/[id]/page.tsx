@@ -27,7 +27,7 @@ type CommentWithProfile = {
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
+  if (minutes < 1) return "сейчас";
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h`;
@@ -159,13 +159,13 @@ export default function PostPage({ params }: PostPageProps) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-20 text-center">
         <p className="text-2xl font-bold text-[var(--text-primary)] mb-2">
-          Post not found
+          Пост не найден
         </p>
         <button
           onClick={() => router.back()}
           className="text-[var(--accent-blue)] text-sm hover:underline"
         >
-          Go back
+          Назад
         </button>
       </div>
     );
@@ -180,7 +180,7 @@ export default function PostPage({ params }: PostPageProps) {
           className="flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back
+          Назад
         </button>
 
         {/* Post */}
@@ -190,7 +190,7 @@ export default function PostPage({ params }: PostPageProps) {
         <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
           <div className="px-4 py-3 border-b border-[var(--border)]">
             <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-              Comments ({post.comments_count ?? 0})
+              Комментарии ({post.comments_count ?? 0})
             </h2>
           </div>
 
@@ -210,7 +210,7 @@ export default function PostPage({ params }: PostPageProps) {
               </div>
             ) : comments.length === 0 ? (
               <p className="text-center text-sm text-[var(--text-secondary)] py-8">
-                No comments yet. Be the first!
+                Комментариев пока нет. Будьте первым!
               </p>
             ) : (
               comments.map((c) => (
@@ -255,7 +255,7 @@ export default function PostPage({ params }: PostPageProps) {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") submitComment();
                 }}
-                placeholder="Write a comment..."
+                placeholder="Написать комментарий..."
                 className="flex-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-full px-4 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none input-focus transition-colors"
               />
               <button

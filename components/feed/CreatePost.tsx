@@ -47,7 +47,7 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
-      setError("Image must be under 10MB");
+      setError("Изображение должно быть менее 10 МБ");
       return;
     }
     setImageFile(file);
@@ -80,7 +80,7 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
         .upload(path, imageFile);
 
       if (uploadError) {
-        setError("Failed to upload image");
+        setError("Не удалось загрузить изображение");
         setUploading(false);
         setSubmitting(false);
         return;
@@ -98,7 +98,7 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
     });
 
     if (insertError) {
-      setError("Failed to create post");
+      setError("Не удалось создать пост");
     } else {
       setContent("");
       setImageFile(null);
@@ -118,14 +118,14 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
     }
   }, [content]);
 
-  const name = profile?.display_name ?? profile?.username ?? "You";
+  const name = profile?.display_name ?? profile?.username ?? "Вы";
   const canSubmit = (content.trim().length > 0 || imageFile !== null) && !submitting;
 
   return (
     <Dialog open={open} onOpenChange={(isOpen: boolean) => { if (!isOpen) onClose(); }}>
       <DialogContent className="sm:max-w-lg bg-[var(--bg-surface)] border-[var(--border)]">
         <DialogHeader>
-          <DialogTitle className="text-[var(--text-primary)]">New post</DialogTitle>
+          <DialogTitle className="text-[var(--text-primary)]">Новый пост</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -150,7 +150,7 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
             ref={textareaRef}
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="What's on your mind?"
+            placeholder="Что у вас нового?"
             rows={3}
             maxLength={500}
             className={cn(
@@ -214,7 +214,7 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
             )}
           >
             <ImageIcon className="w-5 h-5" />
-            Photo
+            Фото
           </button>
 
           <input
@@ -233,7 +233,7 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
             {(submitting || uploading) && (
               <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
             )}
-            Post
+            Опубликовать
           </Button>
         </DialogFooter>
       </DialogContent>

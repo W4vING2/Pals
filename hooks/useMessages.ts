@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Conversation, Message, MessageReaction, ConversationParticipant, ProfileSummary } from "@/lib/supabase";
-import { useAuthStore } from "@/lib/store";
+import { useAuthStore, useUnreadMessagesStore } from "@/lib/store";
 
 export type ParticipantWithProfile = ConversationParticipant & { profiles: ProfileSummary };
 
@@ -28,79 +28,90 @@ export function useMessages() {
   activeConvIdRef.current = activeConversationId;
   const hasLoadedConvsRef = useRef(false);
 
+  const refreshBadgeCount = useCallback(async () => {
+    if (!user) return;
+    const supabase = getSupabaseBrowserClient();
+    const { data } = await supabase
+      .from("conversation_participants")
+      .select("unread_count")
+      .eq("user_id", user.id);
+    if (data) {
+      const total = data.reduce((sum, row) => sum + (row.unread_count ?? 0), 0);
+      useUnreadMessagesStore.getState().setUnreadMessagesCount(total);
+    }
+  }, [user]);
+
   const loadConversations = useCallback(async () => {
     if (!user) return;
     // Only show loading spinner on first load, not background refreshes
-    if (!hasLoadedConvsRef.current) setLoadingConversations(true);
+    const isFirstLoad = !hasLoadedConvsRef.current;
+    if (isFirstLoad) setLoadingConversations(true);
     const supabase = getSupabaseBrowserClient();
 
-    const { data: rawData, error } = await supabase
-      .from("conversation_participants")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+    try {
+      const { data: rawData, error } = await supabase
+        .from("conversation_participants")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Error loading conversations:", error);
-      setLoadingConversations(false);
-      return;
+      if (!error && rawData) {
+        const participantsData = rawData as ConversationParticipant[];
+        if (participantsData.length === 0) {
+          setConversations([]);
+        } else {
+          const conversationIds = participantsData.map((p) => p.conversation_id);
+
+          const [convResult, allPartResult] = await Promise.all([
+            supabase.from("conversations").select("*").in("id", conversationIds),
+            supabase.from("conversation_participants").select("*").in("conversation_id", conversationIds),
+          ]);
+
+          const convData = convResult.data;
+          const allParticipantsList = (allPartResult.data ?? []) as ConversationParticipant[];
+          const userIds = [...new Set(allParticipantsList.map((p) => p.user_id))];
+
+          const { data: profilesData } = await supabase
+            .from("profiles")
+            .select("id, username, display_name, avatar_url, is_online")
+            .in("id", userIds);
+
+          const profilesMap = new Map(
+            (profilesData ?? []).map((p) => [p.id, p as { id: string; username: string; display_name: string | null; avatar_url: string | null; is_online: boolean }])
+          );
+
+          const myParticipationMap = new Map(
+            participantsData.map((p) => [p.conversation_id, p])
+          );
+
+          const result: ConversationWithDetails[] = (convData ?? []).map((conv) => {
+            const participants = allParticipantsList
+              .filter((p) => p.conversation_id === conv.id)
+              .map((p) => ({
+                ...p,
+                profiles: profilesMap.get(p.user_id) ?? { id: p.user_id, username: "unknown", display_name: null, avatar_url: null },
+              }));
+            const myParticipation = myParticipationMap.get(conv.id);
+            return {
+              ...(conv as Conversation),
+              participants,
+              unread_count: myParticipation?.unread_count ?? 0,
+            };
+          });
+
+          result.sort((a, b) => {
+            const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : new Date(a.created_at).getTime();
+            const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : new Date(b.created_at).getTime();
+            return bTime - aTime;
+          });
+
+          setConversations(result);
+        }
+      }
+    } catch (err) {
+      console.warn("loadConversations failed:", err);
     }
-
-    const participantsData = (rawData ?? []) as ConversationParticipant[];
-    if (participantsData.length === 0) {
-      setConversations([]);
-      setLoadingConversations(false);
-      return;
-    }
-
-    const conversationIds = participantsData.map((p) => p.conversation_id);
-
-    // Parallel: load conversations + all participants at once
-    const [convResult, allPartResult] = await Promise.all([
-      supabase.from("conversations").select("*").in("id", conversationIds),
-      supabase.from("conversation_participants").select("*").in("conversation_id", conversationIds),
-    ]);
-
-    const convData = convResult.data;
-    const allParticipantsList = (allPartResult.data ?? []) as ConversationParticipant[];
-    const userIds = [...new Set(allParticipantsList.map((p) => p.user_id))];
-
-    const { data: profilesData } = await supabase
-      .from("profiles")
-      .select("id, username, display_name, avatar_url, is_online")
-      .in("id", userIds);
-
-    const profilesMap = new Map(
-      (profilesData ?? []).map((p) => [p.id, p as { id: string; username: string; display_name: string | null; avatar_url: string | null; is_online: boolean }])
-    );
-
-    const myParticipationMap = new Map(
-      participantsData.map((p) => [p.conversation_id, p])
-    );
-
-    const result: ConversationWithDetails[] = (convData ?? []).map((conv) => {
-      const participants = allParticipantsList
-        .filter((p) => p.conversation_id === conv.id)
-        .map((p) => ({
-          ...p,
-          profiles: profilesMap.get(p.user_id) ?? { id: p.user_id, username: "unknown", display_name: null, avatar_url: null },
-        }));
-      const myParticipation = myParticipationMap.get(conv.id);
-      return {
-        ...(conv as Conversation),
-        participants,
-        unread_count: myParticipation?.unread_count ?? 0,
-      };
-    });
-
-    // Sort by last_message_at desc
-    result.sort((a, b) => {
-      const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : new Date(a.created_at).getTime();
-      const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : new Date(b.created_at).getTime();
-      return bTime - aTime;
-    });
-
-    setConversations(result);
+    // ALWAYS cleanup — never leave skeleton stuck
     hasLoadedConvsRef.current = true;
     setLoadingConversations(false);
   }, [user]);
@@ -127,54 +138,55 @@ export function useMessages() {
     setActiveConversationId(conversationId);
     const supabase = getSupabaseBrowserClient();
 
-    const { data, error } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true });
 
-    if (!error && data) {
-      const msgs = data as Message[];
-      if (msgs.length === 0) {
-        setMessages([]);
-      } else {
-        // Enrich with sender profiles + reactions in parallel
-        const senderIds = [...new Set(msgs.map((m) => m.sender_id))];
-        const msgIds = msgs.map((m) => m.id);
+      if (!error && data) {
+        const msgs = data as Message[];
+        if (msgs.length === 0) {
+          setMessages([]);
+        } else {
+          const senderIds = [...new Set(msgs.map((m) => m.sender_id))];
+          const msgIds = msgs.map((m) => m.id);
 
-        const [profilesResult, reactionsMap] = await Promise.all([
-          supabase
-            .from("profiles")
-            .select("id, username, display_name, avatar_url, is_online")
-            .in("id", senderIds),
-          loadReactionsForMessages(msgIds),
-        ]);
+          const [profilesResult, reactionsMap] = await Promise.all([
+            supabase
+              .from("profiles")
+              .select("id, username, display_name, avatar_url, is_online")
+              .in("id", senderIds),
+            loadReactionsForMessages(msgIds),
+          ]);
 
-        const profilesMap = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
-        const enriched: Message[] = msgs.map((m) => ({
-          ...m,
-          profiles: profilesMap.get(m.sender_id) as Message["profiles"],
-          reactions: reactionsMap.get(m.id) ?? [],
-        }));
-        setMessages(enriched);
+          const profilesMap = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
+          const enriched: Message[] = msgs.map((m) => ({
+            ...m,
+            profiles: profilesMap.get(m.sender_id) as Message["profiles"],
+            reactions: reactionsMap.get(m.id) ?? [],
+          }));
+          setMessages(enriched);
+        }
       }
-    } else {
-      setMessages([]);
+    } catch (err) {
+      console.warn("loadMessages failed:", err);
     }
     setLoadingMessages(false);
 
-    // Mark as read: update participant unread count AND mark individual messages
+    // Mark as read (fire-and-forget, don't block UI)
     if (user) {
-      await Promise.all([
+      Promise.all([
         supabase
           .from("conversation_participants")
           .update({ unread_count: 0, last_read_at: new Date().toISOString() })
           .eq("conversation_id", conversationId)
           .eq("user_id", user.id),
         supabase.rpc("mark_messages_read", { p_conversation_id: conversationId }),
-      ]);
+      ]).then(() => refreshBadgeCount()).catch(() => { /* ignore */ });
     }
-  }, [user, loadReactionsForMessages]);
+  }, [user, loadReactionsForMessages, refreshBadgeCount]);
 
   const sendMessage = useCallback(
     async (conversationId: string, content: string, imageUrl?: string) => {
@@ -190,6 +202,7 @@ export function useMessages() {
         content: content || null,
         image_url: imageUrl ?? null,
         is_read: false,
+        is_edited: false,
         created_at: new Date().toISOString(),
         reactions: [],
         _status: "sending",
@@ -304,7 +317,7 @@ export function useMessages() {
 
       const { error } = await supabase
         .from("messages")
-        .update({ content: newContent })
+        .update({ content: newContent, is_edited: true })
         .eq("id", messageId)
         .eq("sender_id", user.id);
 
@@ -315,7 +328,7 @@ export function useMessages() {
 
       // Update local state immediately
       setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, content: newContent } : m))
+        prev.map((m) => (m.id === messageId ? { ...m, content: newContent, is_edited: true } : m))
       );
     },
     [user]
@@ -516,6 +529,7 @@ export function useMessages() {
                 .eq("conversation_id", currentConvId)
                 .eq("user_id", currentUser.id),
             ]);
+            refreshBadgeCount();
           }
         }
       )
@@ -532,7 +546,7 @@ export function useMessages() {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === updated.id
-                ? { ...m, content: updated.content, image_url: updated.image_url, is_read: updated.is_read }
+                ? { ...m, content: updated.content, image_url: updated.image_url, is_read: updated.is_read, is_edited: updated.is_edited }
                 : m
             )
           );
@@ -679,6 +693,58 @@ export function useMessages() {
       loadConversations();
     }
   }, [user, loadConversations]);
+
+  // Recover from phone sleep / tab becoming visible again
+  useEffect(() => {
+    if (!user) return;
+
+    let wakeTimeout: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+
+      // Wait for network to be back (phones take a moment after waking)
+      const tryRefresh = async () => {
+        // If offline, wait up to 5s for online event
+        if (!navigator.onLine) {
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, 5000);
+            const onOnline = () => {
+              clearTimeout(timer);
+              window.removeEventListener("online", onOnline);
+              // Give connection a moment to stabilize
+              setTimeout(resolve, 500);
+            };
+            window.addEventListener("online", onOnline);
+          });
+        } else {
+          // Online but let Supabase reconnect websockets
+          await new Promise((r) => setTimeout(r, 800));
+        }
+
+        if (cancelled) return;
+
+        loadConversations();
+        const convId = activeConvIdRef.current;
+        if (convId) {
+          loadMessages(convId, { silent: true });
+        }
+      };
+
+      // Clear any pending wake
+      if (wakeTimeout) clearTimeout(wakeTimeout);
+      tryRefresh();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (wakeTimeout) clearTimeout(wakeTimeout);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   return {
     conversations,

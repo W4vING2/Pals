@@ -16,12 +16,12 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", icon: Home, label: "Home" },
-  { href: "/search", icon: Search, label: "Search" },
-  { href: "/create", icon: PlusCircle, label: "Create" },
-  { href: "/messages", icon: MessageCircle, label: "Messages" },
-  { href: "/notifications", icon: Bell, label: "Notifications" },
-  { href: "/profile", icon: User, label: "Profile", isDynamic: true },
+  { href: "/", icon: Home, label: "Главная" },
+  { href: "/search", icon: Search, label: "Поиск" },
+  { href: "/create", icon: PlusCircle, label: "Создать" },
+  { href: "/messages", icon: MessageCircle, label: "Сообщения" },
+  { href: "/notifications", icon: Bell, label: "Уведомления" },
+  { href: "/profile", icon: User, label: "Профиль", isDynamic: true },
 ];
 
 export function DesktopSidebar() {
@@ -75,12 +75,12 @@ export function DesktopSidebar() {
             >
               <span className="relative">
                 <Icon className="h-5 w-5" />
-                {item.label === "Notifications" && unreadCount > 0 && (
+                {item.label === "Уведомления" && unreadCount > 0 && (
                   <span className="absolute -right-1.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--destructive)] px-1 text-[10px] font-bold text-white">
                     {unreadCount > 99 ? "99+" : unreadCount}
                   </span>
                 )}
-                {item.label === "Messages" && unreadMessages > 0 && (
+                {item.label === "Сообщения" && unreadMessages > 0 && (
                   <span className="absolute -right-1.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--destructive)] px-1 text-[10px] font-bold text-white">
                     {unreadMessages > 99 ? "99+" : unreadMessages}
                   </span>

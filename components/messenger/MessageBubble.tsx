@@ -5,6 +5,7 @@ import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, CheckCheck, Pencil, Trash2, X, CornerDownLeft, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ImageLightbox } from "@/components/shared/ImageLightbox";
 import { useAuthStore } from "@/lib/store";
 import type { Message } from "@/lib/supabase";
 
@@ -42,6 +43,7 @@ export const MessageBubble = memo(function MessageBubble({
   const profile = message.profiles;
   const { user } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(message.content ?? "");
   const menuRef = useRef<HTMLDivElement>(null);
@@ -166,19 +168,27 @@ export const MessageBubble = memo(function MessageBubble({
         )}
       >
         {message.image_url && (
-          <div
-            className="relative rounded-xl overflow-hidden cursor-pointer"
-            onClick={handleClick}
-            style={{ width: 280, maxWidth: "100%", aspectRatio: "4/3" }}
-          >
-            <Image
-              src={message.image_url}
-              alt="Message image"
-              fill
-              className="object-cover"
-              sizes="280px"
+          <>
+            <div
+              className="relative rounded-xl overflow-hidden cursor-zoom-in group/img"
+              onClick={(e) => { e.stopPropagation(); setLightboxOpen(true); }}
+              style={{ maxWidth: 280 }}
+            >
+              <Image
+                src={message.image_url}
+                alt="Изображение"
+                width={280}
+                height={280}
+                className="w-full h-auto object-cover rounded-xl"
+                sizes="280px"
+              />
+            </div>
+            <ImageLightbox
+              src={lightboxOpen ? message.image_url : null}
+              alt="Изображение"
+              onClose={() => setLightboxOpen(false)}
             />
-          </div>
+          </>
         )}
 
         {editing ? (
@@ -260,6 +270,7 @@ export const MessageBubble = memo(function MessageBubble({
           <div className="flex items-center gap-1 px-1">
             <span className="text-[10px] text-[var(--text-secondary)]">
               {formatTime(message.created_at)}
+              {message.is_edited && <span className="ml-1 italic">изм.</span>}
             </span>
             {isOwn && (
               message._status === "sending" ? (
@@ -271,7 +282,7 @@ export const MessageBubble = memo(function MessageBubble({
                   aria-label="Retry sending"
                 >
                   <AlertCircle className="w-3 h-3" />
-                  <span className="text-[9px] font-medium">Retry</span>
+                  <span className="text-[9px] font-medium">Повторить</span>
                 </button>
               ) : message.is_read ? (
                 <CheckCheck className="w-3 h-3 text-[var(--accent-mint)]" />
@@ -321,7 +332,7 @@ export const MessageBubble = memo(function MessageBubble({
                       className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors w-full text-left"
                     >
                       <Pencil className="w-4 h-4 text-[var(--text-secondary)]" />
-                      Edit
+                      Изменить
                     </button>
                   )}
                   <button
@@ -329,7 +340,7 @@ export const MessageBubble = memo(function MessageBubble({
                     className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-500/10 transition-colors w-full text-left"
                   >
                     <Trash2 className="w-4 h-4" />
-                    Delete
+                    Удалить
                   </button>
                 </>
               )}

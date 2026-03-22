@@ -122,10 +122,10 @@ export default function ProfilePage({ params }: ProfilePageProps) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-20 text-center">
         <p className="text-2xl font-bold text-[var(--text-primary)] mb-2">
-          User not found
+          Пользователь не найден
         </p>
         <p className="text-[var(--text-secondary)]">
-          @{username} doesn&apos;t exist
+          @{username} не существует
         </p>
       </div>
     );

@@ -22,7 +22,7 @@ function timeAgo(dateStr: string | null): string {
   if (!dateStr) return "";
   const diff = Date.now() - new Date(dateStr).getTime();
   const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "now";
+  if (minutes < 1) return "сейчас";
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h`;
@@ -85,7 +85,7 @@ export function ConversationList({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search conversations..."
+            placeholder="Поиск чатов..."
             className="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-full pl-9 pr-4 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none input-focus transition-colors"
           />
         </div>
@@ -95,7 +95,7 @@ export function ConversationList({
             className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/10 transition-colors"
           >
             <Users className="size-4" />
-            New group
+            Новая группа
           </button>
         )}
       </div>
@@ -108,7 +108,7 @@ export function ConversationList({
           <div className="flex flex-col items-center justify-center py-12 gap-2 text-center px-4">
             <MessageSquare className="w-10 h-10 text-[var(--text-secondary)] opacity-30" />
             <p className="text-sm text-[var(--text-secondary)]">
-              {search ? "No conversations found" : "No conversations yet"}
+              {search ? "Чаты не найдены" : "Пока нет чатов"}
             </p>
           </div>
         ) : (
@@ -119,10 +119,10 @@ export function ConversationList({
               : conv.participants.find((p) => p.user_id !== user?.id);
             const otherProfile = other?.profiles;
             const name = isGroup
-              ? conv.name ?? "Group"
+              ? conv.name ?? "Группа"
               : otherProfile?.display_name ??
                 otherProfile?.username ??
-                "Unknown";
+                "Неизвестный";
             const avatarUrl = isGroup
               ? conv.avatar_url
               : otherProfile?.avatar_url;
@@ -190,7 +190,7 @@ export function ConversationList({
                   </div>
                   <div className="flex items-center justify-between gap-2 mt-0.5">
                     <p className="text-xs text-[var(--text-secondary)] truncate">
-                      {conv.last_message ?? "No messages yet"}
+                      {conv.last_message ?? "Нет сообщений"}
                     </p>
                     <AnimatePresence>
                       {conv.unread_count > 0 && (

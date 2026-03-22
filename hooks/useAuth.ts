@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { User, AuthError } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { useAuthStore } from "@/lib/store";
 import type { Profile } from "@/lib/supabase";
@@ -44,13 +44,41 @@ async function loadOrCreateProfile(u: User) {
   return created as Profile | null;
 }
 
-/** Clear corrupted auth state and sign out gracefully */
-async function handleAuthError(supabase: ReturnType<typeof getSupabaseBrowserClient>) {
-  try {
-    await supabase.auth.signOut({ scope: "local" });
-  } catch {
-    // signOut itself may fail if session is broken — that's OK
+/** Wait for network to be available (or resolve immediately if online) */
+function waitForOnline(ms: number): Promise<void> {
+  if (typeof navigator !== "undefined" && navigator.onLine) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms); // safety timeout
+    const handler = () => {
+      clearTimeout(timer);
+      window.removeEventListener("online", handler);
+      // Small delay for connection to stabilize
+      setTimeout(resolve, 300);
+    };
+    window.addEventListener("online", handler);
+  });
+}
+
+/** Retry a function with delays, giving up after maxRetries */
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number,
+  delayMs: number
+): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (i < maxRetries) {
+        // Wait for online + delay before retrying
+        await waitForOnline(5000);
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
   }
+  throw lastError;
 }
 
 /** Race a promise against a timeout */
@@ -76,49 +104,31 @@ export function useAuth() {
     globalThis.__authInitialized = true;
 
     const supabase = getSupabaseBrowserClient();
+    let initialDone = false;
 
-    // Get initial session with timeout (8s max)
-    withTimeout(supabase.auth.getSession(), 8000)
-      .then(async ({ data: { session }, error }) => {
-        // Handle invalid/expired refresh token
-        if (error) {
-          console.warn("Session error, clearing auth state:", error.message);
-          await handleAuthError(supabase);
-          setUser(null);
-          setProfile(null);
-          setLoading(false);
-          return;
-        }
-
-        const u = session?.user ?? null;
-        setUser(u);
-        if (u) {
-          try {
-            const p = await withTimeout(loadOrCreateProfile(u), 8000);
-            if (p) setProfile(p);
-          } catch {
-            console.warn("Failed to load profile, continuing without it");
-          }
-        }
+    // Safety: never block the app for more than 6s even if INITIAL_SESSION never fires
+    const safetyTimer = setTimeout(() => {
+      if (!initialDone) {
+        initialDone = true;
+        console.warn("Auth safety timeout — unblocking app");
         setLoading(false);
-      })
-      .catch((err) => {
-        console.warn("Auth getSession timeout/error:", err);
-        // Don't block the app — set loading false anyway
-        setLoading(false);
-      });
+      }
+    }, 6000);
 
-    // Single auth state listener for the whole app
+    // Rely entirely on onAuthStateChange — it fires INITIAL_SESSION synchronously
+    // from local storage without navigator.locks, avoiding the getSession() hang
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        // TOKEN_REFRESHED with null session means refresh failed
-        if (event === "TOKEN_REFRESHED" && !session) {
-          console.warn("Token refresh failed, signing out");
-          await handleAuthError(supabase);
-          setUser(null);
-          setProfile(null);
-          storeSignOut();
-          setLoading(false);
+        // TOKEN_REFRESHED — silently ignore (don't trigger re-renders)
+        if (event === "TOKEN_REFRESHED") {
+          if (!session) {
+            console.warn("Token refresh failed, signing out");
+            try { await supabase.auth.signOut({ scope: "local" }); } catch { /* ok */ }
+            setUser(null);
+            setProfile(null);
+            storeSignOut();
+          }
+          // Success — Supabase client uses new token internally, no state update needed
           return;
         }
 
@@ -132,20 +142,27 @@ export function useAuth() {
 
         const u = session?.user ?? null;
         setUser(u);
-        if (u && event !== "INITIAL_SESSION") {
+
+        if (u) {
           try {
-            const p = await loadOrCreateProfile(u);
+            const p = await withTimeout(loadOrCreateProfile(u), 10000);
             if (p) setProfile(p);
           } catch {
             console.warn("Failed to load profile on auth change");
           }
         }
         if (!u) setProfile(null);
+
+        if (!initialDone) {
+          initialDone = true;
+          clearTimeout(safetyTimer);
+        }
         setLoading(false);
       }
     );
 
     return () => {
+      clearTimeout(safetyTimer);
       subscription.unsubscribe();
       globalThis.__authInitialized = false;
     };

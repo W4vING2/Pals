@@ -296,11 +296,14 @@ create table if not exists public.messages (
   content          text,
   image_url        text,
   is_read          boolean not null default false,
+  is_edited        boolean not null default false,
   created_at       timestamptz not null default now()
 );
 
 create index idx_messages_conversation on public.messages(conversation_id, created_at);
 create index idx_messages_sender      on public.messages(sender_id);
+
+alter table public.messages replica identity full;
 
 alter table public.messages enable row level security;
 

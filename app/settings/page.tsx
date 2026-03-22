@@ -69,15 +69,15 @@ export default function SettingsPage() {
   const changePassword = async () => {
     setPasswordError(null);
     if (!newPassword || !confirmPassword) {
-      setPasswordError("Please fill in all fields");
+      setPasswordError("Заполните все поля");
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPasswordError("Passwords do not match");
+      setPasswordError("Пароли не совпадают");
       return;
     }
     if (newPassword.length < 8) {
-      setPasswordError("Password must be at least 8 characters");
+      setPasswordError("Пароль минимум 8 символов");
       return;
     }
     setSavingPassword(true);
@@ -109,40 +109,40 @@ export default function SettingsPage() {
     <PageTransition>
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
         <h1 className="text-2xl font-bold text-[var(--text-primary)]">
-          Settings
+          Настройки
         </h1>
 
         {/* Profile Section */}
         <Card className="bg-[var(--bg-surface)] border-[var(--border)]">
           <CardHeader>
             <CardTitle className="text-[var(--text-primary)]">
-              Profile
+              Профиль
             </CardTitle>
             <CardDescription className="text-[var(--text-secondary)]">
-              Update your public profile information
+              Обновите информацию вашего профиля
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--text-secondary)]">
-                Display Name
+                Отображаемое имя
               </label>
               <Input
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Your display name"
+                placeholder="Ваше имя"
                 maxLength={50}
                 className="h-10 rounded-xl bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50"
               />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--text-secondary)]">
-                Bio
+                О себе
               </label>
               <textarea
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
-                placeholder="Tell people about yourself..."
+                placeholder="Расскажите о себе..."
                 rows={3}
                 maxLength={200}
                 className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-3 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50 resize-none outline-none input-focus transition-colors"
@@ -155,7 +155,7 @@ export default function SettingsPage() {
               {profileSaved && (
                 <span className="flex items-center gap-1 text-sm text-emerald-400">
                   <Check className="size-3.5" />
-                  Saved
+                  Сохранено
                 </span>
               )}
               <Button
@@ -166,7 +166,7 @@ export default function SettingsPage() {
                 {savingProfile && (
                   <Loader2 className="size-3.5 animate-spin mr-1" />
                 )}
-                Save Profile
+                Сохранить
               </Button>
             </div>
           </CardContent>
@@ -176,15 +176,15 @@ export default function SettingsPage() {
         <Card className="bg-[var(--bg-surface)] border-[var(--border)]">
           <CardHeader>
             <CardTitle className="text-[var(--text-primary)]">
-              Account
+              Аккаунт
             </CardTitle>
             <CardDescription className="text-[var(--text-secondary)]">
-              Manage your account settings
+              Управление настройками аккаунта
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="py-2">
-              <p className="text-xs text-[var(--text-secondary)] mb-1">Email</p>
+              <p className="text-xs text-[var(--text-secondary)] mb-1">Почта</p>
               <p className="text-sm text-[var(--text-primary)] font-medium">
                 {user?.email}
               </p>
@@ -192,30 +192,30 @@ export default function SettingsPage() {
 
             <div className="border-t border-[var(--border)] pt-4 space-y-4">
               <p className="text-sm font-medium text-[var(--text-secondary)]">
-                Change Password
+                Смена пароля
               </p>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[var(--text-secondary)]">
-                  New Password
+                  Новый пароль
                 </label>
                 <Input
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Min. 8 characters"
+                  placeholder="Мин. 8 символов"
                   autoComplete="new-password"
                   className="h-10 rounded-xl bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50"
                 />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[var(--text-secondary)]">
-                  Confirm Password
+                  Подтвердите пароль
                 </label>
                 <Input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repeat new password"
+                  placeholder="Повторите новый пароль"
                   autoComplete="new-password"
                   className="h-10 rounded-xl bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50"
                 />
@@ -231,7 +231,7 @@ export default function SettingsPage() {
                 {passwordSaved && (
                   <span className="flex items-center gap-1 text-sm text-emerald-400">
                     <Check className="size-3.5" />
-                    Password updated
+                    Пароль обновлён
                   </span>
                 )}
                 <Button
@@ -243,7 +243,7 @@ export default function SettingsPage() {
                   {savingPassword && (
                     <Loader2 className="size-3.5 animate-spin mr-1" />
                   )}
-                  Update Password
+                  Обновить пароль
                 </Button>
               </div>
             </div>
@@ -255,17 +255,16 @@ export default function SettingsPage() {
           <CardHeader>
             <CardTitle className="text-red-400 flex items-center gap-2">
               <AlertTriangle className="size-4" />
-              Danger Zone
+              Опасная зона
             </CardTitle>
             <CardDescription className="text-[var(--text-secondary)]">
-              Deleting your account is irreversible. All your posts, messages,
-              and data will be permanently removed.
+              Удаление аккаунта необратимо. Все ваши посты, сообщения и данные будут удалены навсегда.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-[var(--text-secondary)]">
-                Type your username &quot;{profile?.username}&quot; to confirm
+                Введите ваше имя пользователя &quot;{profile?.username}&quot; для подтверждения
               </label>
               <Input
                 value={deleteConfirm}
@@ -280,7 +279,7 @@ export default function SettingsPage() {
               />
               {deleteConfirm && deleteConfirm !== profile?.username && (
                 <p className="text-xs text-red-400">
-                  Username doesn&apos;t match
+                  Имя пользователя не совпадает
                 </p>
               )}
             </div>
@@ -293,7 +292,7 @@ export default function SettingsPage() {
               {deleting && (
                 <Loader2 className="size-3.5 animate-spin mr-1" />
               )}
-              Delete Account
+              Удалить аккаунт
             </Button>
           </CardContent>
         </Card>

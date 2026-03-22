@@ -32,7 +32,7 @@ export default function AuthPage() {
     e.preventDefault();
     setLoginError(null);
     if (!loginEmail || !loginPassword) {
-      setLoginError("Please fill in all fields");
+      setLoginError("Заполните все поля");
       return;
     }
     setLoginLoading(true);
@@ -54,15 +54,15 @@ export default function AuthPage() {
     setRegError(null);
 
     if (!regEmail || !regPassword || !regUsername) {
-      setRegError("Username, email and password are required");
+      setRegError("Имя пользователя, почта и пароль обязательны");
       return;
     }
     if (regPassword.length < 8) {
-      setRegError("Password must be at least 8 characters");
+      setRegError("Пароль минимум 8 символов");
       return;
     }
     if (!/^[a-z0-9_]{3,30}$/.test(regUsername)) {
-      setRegError("Username must be 3-30 chars, lowercase letters, numbers, underscores");
+      setRegError("Имя: 3-30 символов, строчные буквы, цифры, подчёркивания");
       return;
     }
 
@@ -77,7 +77,7 @@ export default function AuthPage() {
       .maybeSingle();
 
     if (existing) {
-      setRegError("Username already taken");
+      setRegError("Имя пользователя занято");
       setRegLoading(false);
       return;
     }
@@ -156,7 +156,7 @@ export default function AuthPage() {
             Pals
           </h1>
           <p className="text-sm text-[var(--text-secondary)] mt-2">
-            Connect with your people
+            Общайся со своими
           </p>
         </div>
 
@@ -168,13 +168,13 @@ export default function AuthPage() {
                 value="login"
                 className="flex-1 rounded-xl py-2 text-sm font-semibold data-active:bg-[var(--bg-surface)] data-active:text-[var(--text-primary)] data-active:shadow-sm text-[var(--text-secondary)]"
               >
-                Sign In
+                Вход
               </TabsTrigger>
               <TabsTrigger
                 value="register"
                 className="flex-1 rounded-xl py-2 text-sm font-semibold data-active:bg-[var(--bg-surface)] data-active:text-[var(--text-primary)] data-active:shadow-sm text-[var(--text-secondary)]"
               >
-                Register
+                Регистрация
               </TabsTrigger>
             </TabsList>
 
@@ -183,7 +183,7 @@ export default function AuthPage() {
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--text-secondary)]">
-                    Email
+                    Почта
                   </label>
                   <Input
                     type="email"
@@ -196,7 +196,7 @@ export default function AuthPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--text-secondary)]">
-                    Password
+                    Пароль
                   </label>
                   <Input
                     type="password"
@@ -220,7 +220,7 @@ export default function AuthPage() {
                   className="w-full h-10 rounded-xl bg-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/90 text-white font-semibold"
                 >
                   {loginLoading && <Loader2 className="size-4 animate-spin mr-2" />}
-                  Sign In
+                  Войти
                 </Button>
               </form>
             </TabsContent>
@@ -230,23 +230,23 @@ export default function AuthPage() {
               <form onSubmit={handleRegister} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--text-secondary)]">
-                    Username
+                    Имя пользователя
                   </label>
                   <Input
                     type="text"
-                    placeholder="yourname"
+                    placeholder="вашеимя"
                     value={regUsername}
                     onChange={(e) => setRegUsername(e.target.value.toLowerCase())}
                     autoComplete="username"
                     className="h-10 rounded-xl bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text-primary)] placeholder:text-[var(--text-secondary)]/50"
                   />
                   <p className="text-xs text-[var(--text-secondary)]/70">
-                    3-30 chars, lowercase, no spaces
+                    3-30 символов, строчные, без пробелов
                   </p>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--text-secondary)]">
-                    Email
+                    Почта
                   </label>
                   <Input
                     type="email"
@@ -259,11 +259,11 @@ export default function AuthPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--text-secondary)]">
-                    Password
+                    Пароль
                   </label>
                   <Input
                     type="password"
-                    placeholder="Min. 8 characters"
+                    placeholder="Мин. 8 символов"
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
                     autoComplete="new-password"
@@ -272,7 +272,7 @@ export default function AuthPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-medium text-[var(--text-secondary)]">
-                    Date of Birth
+                    Дата рождения
                   </label>
                   <Input
                     type="date"
@@ -294,7 +294,7 @@ export default function AuthPage() {
                   className="w-full h-10 rounded-xl bg-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/90 text-white font-semibold"
                 >
                   {regLoading && <Loader2 className="size-4 animate-spin mr-2" />}
-                  Create Account
+                  Создать аккаунт
                 </Button>
               </form>
             </TabsContent>
@@ -303,7 +303,7 @@ export default function AuthPage() {
           {/* Divider */}
           <div className="flex items-center gap-3 my-5">
             <div className="flex-1 h-px bg-[var(--border)]" />
-            <span className="text-xs text-[var(--text-secondary)]">or</span>
+            <span className="text-xs text-[var(--text-secondary)]">или</span>
             <div className="flex-1 h-px bg-[var(--border)]" />
           </div>
 
@@ -331,7 +331,7 @@ export default function AuthPage() {
               />
             </svg>
             <span className="text-sm font-medium text-[var(--text-primary)]">
-              Continue with Google
+              Войти через Google
             </span>
           </button>
         </GlassPanel>

@@ -44,10 +44,10 @@ export function PostGrid({ posts, loading }: PostGridProps) {
         </div>
         <div>
           <p className="font-semibold text-[var(--text-primary)]">
-            No posts yet
+            Постов пока нет
           </p>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
-            Posts will appear here
+            Посты появятся здесь
           </p>
         </div>
       </div>
@@ -68,7 +68,7 @@ export function PostGrid({ posts, loading }: PostGridProps) {
           )}
         >
           <Grid2X2 className="size-4" />
-          Grid
+          Сетка
         </button>
         <button
           onClick={() => setView("list")}
@@ -80,7 +80,7 @@ export function PostGrid({ posts, loading }: PostGridProps) {
           )}
         >
           <List className="size-4" />
-          List
+          Список
         </button>
       </div>
 

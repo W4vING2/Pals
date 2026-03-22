@@ -75,11 +75,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { activeCall, callError, setCallError } = useCallStore();
   const { open: createPostOpen, setOpen: setCreatePostOpen } = useCreatePostStore();
 
-  const [showSplash, setShowSplash] = useState(true);
+  // Only show splash once per app lifetime (not on re-renders or tab switch)
+  const splashDoneRef = useRef(false);
+  const [showSplash, setShowSplash] = useState(() => !splashDoneRef.current);
   const splashMinTimeRef = useRef(false);
 
   // Minimum splash time (800ms for animation), then wait for auth
   useEffect(() => {
+    if (splashDoneRef.current) return;
     const timer = setTimeout(() => {
       splashMinTimeRef.current = true;
     }, 800);
@@ -88,12 +91,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Dismiss splash when auth is done AND minimum time has passed
   useEffect(() => {
+    if (splashDoneRef.current) return;
     if (!loading && showSplash) {
-      if (splashMinTimeRef.current) {
+      const dismiss = () => {
+        splashDoneRef.current = true;
         setShowSplash(false);
+      };
+      if (splashMinTimeRef.current) {
+        dismiss();
       } else {
-        // Auth finished fast — wait for min animation time
-        const timer = setTimeout(() => setShowSplash(false), 800);
+        const timer = setTimeout(dismiss, 800);
         return () => clearTimeout(timer);
       }
     }

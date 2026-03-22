@@ -70,9 +70,9 @@ export function FeedList({ posts, loading, hasMore, onLoadMore, likedPostIds }: 
           <FileText className="w-8 h-8 text-[var(--text-secondary)] opacity-40" />
         </div>
         <div>
-          <p className="font-semibold text-[var(--text-primary)]">Nothing here yet</p>
+          <p className="font-semibold text-[var(--text-primary)]">Пока ничего нет</p>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
-            Follow people or create your first post!
+            Подпишитесь на людей или создайте первый пост!
           </p>
         </div>
       </div>
@@ -104,7 +104,7 @@ export function FeedList({ posts, loading, hasMore, onLoadMore, likedPostIds }: 
 
       {!hasMore && posts.length > 0 && (
         <p className="text-center text-xs text-[var(--text-secondary)] py-4">
-          You&apos;ve reached the end
+          Вы долистали до конца
         </p>
       )}
     </div>

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
   Phone,
@@ -12,6 +12,8 @@ import {
   MessageSquare,
   Settings,
   Users,
+  Loader2,
+  X,
 } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import { OnlineIndicator } from "@/components/shared/OnlineIndicator";
@@ -26,8 +28,8 @@ function formatDateSeparator(dateStr: string): string {
   const yesterday = new Date(today.getTime() - 86400000);
   const msgDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-  if (msgDate.getTime() === today.getTime()) return "Today";
-  if (msgDate.getTime() === yesterday.getTime()) return "Yesterday";
+  if (msgDate.getTime() === today.getTime()) return "Сегодня";
+  if (msgDate.getTime() === yesterday.getTime()) return "Вчера";
 
   return date.toLocaleDateString(undefined, {
     day: "numeric",
@@ -101,7 +103,11 @@ export function ChatWindow({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [justSent, setJustSent] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  const [caption, setCaption] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Track message IDs that were loaded initially (no animation needed)
@@ -139,8 +145,8 @@ export function ChatWindow({
   const otherProfile = otherParticipant?.profiles;
   const otherUserId = otherParticipant?.user_id;
   const chatName = isGroup
-    ? conversation?.name ?? "Group"
-    : otherProfile?.display_name ?? otherProfile?.username ?? "Unknown";
+    ? conversation?.name ?? "Группа"
+    : otherProfile?.display_name ?? otherProfile?.username ?? "Неизвестный";
   const chatAvatarUrl = isGroup
     ? conversation?.avatar_url
     : otherProfile?.avatar_url;
@@ -173,18 +179,39 @@ export function ChatWindow({
     }
   };
 
-  const handleImageUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setUploadError(null);
+    setPendingFile(file);
+    setPendingPreview(URL.createObjectURL(file));
+    setCaption("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleSendImage = async () => {
+    if (!pendingFile) return;
     setUploading(true);
-    const url = await onUploadImage(file);
-    if (url) {
-      await onSend("", url);
+    try {
+      const url = await onUploadImage(pendingFile);
+      if (url) {
+        await onSend(caption.trim(), url);
+      } else {
+        setUploadError("Не удалось загрузить файл");
+      }
+    } catch (err) {
+      console.error("Upload error:", err);
+      setUploadError("Ошибка загрузки файла");
     }
     setUploading(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    cancelPendingImage();
+  };
+
+  const cancelPendingImage = () => {
+    if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+    setPendingFile(null);
+    setPendingPreview(null);
+    setCaption("");
   };
 
   const handleHeaderClick = () => {
@@ -200,10 +227,10 @@ export function ChatWindow({
         <MessageSquare className="w-16 h-16 text-[var(--text-secondary)] opacity-20" />
         <div>
           <p className="font-semibold text-[var(--text-primary)]">
-            Select a conversation
+            Выберите чат
           </p>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
-            Choose a chat from the left to start messaging
+            Выберите чат слева, чтобы начать общение
           </p>
         </div>
       </div>
@@ -260,12 +287,12 @@ export function ChatWindow({
             </p>
             {isGroup ? (
               <p className="text-xs text-[var(--text-secondary)]">
-                {conversation.participants.length} members
+                {conversation.participants.length} участников
               </p>
             ) : (
               <p className="text-xs text-[var(--text-secondary)]">
                 {isOtherOnline ? (
-                  <span className="text-emerald-500">Online</span>
+                  <span className="text-emerald-500">В сети</span>
                 ) : otherProfile?.username ? (
                   <>@{otherProfile.username}</>
                 ) : null}
@@ -314,7 +341,7 @@ export function ChatWindow({
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
             <p className="text-sm text-[var(--text-secondary)]">
-              No messages yet. Say hello!
+              Сообщений пока нет. Напишите первым!
             </p>
           </div>
         ) : (
@@ -357,6 +384,61 @@ export function ChatWindow({
         <div ref={bottomRef} />
       </div>
 
+      {uploadError && (
+        <div className="px-4 py-2 bg-red-500/10 text-red-400 text-xs text-center">
+          {uploadError}
+        </div>
+      )}
+
+      {/* Pending image preview */}
+      <AnimatePresence>
+        {pendingPreview && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-surface)]/90 backdrop-blur-xl"
+          >
+            <div className="flex items-start gap-3">
+              <div className="relative rounded-xl overflow-hidden shrink-0" style={{ maxWidth: 120, maxHeight: 120 }}>
+                <img src={pendingPreview} alt="Preview" className="w-full h-full object-cover rounded-xl" style={{ maxHeight: 120 }} />
+              </div>
+              <div className="flex-1 min-w-0 space-y-2">
+                <input
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendImage(); } }}
+                  placeholder="Подпись (необязательно)..."
+                  className="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSendImage}
+                    disabled={uploading}
+                    className="px-4 py-1.5 rounded-xl bg-[var(--accent-blue)] text-white text-sm font-medium hover:bg-[var(--accent-blue)]/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <SendHorizontal className="w-3.5 h-3.5" />}
+                    Отправить
+                  </button>
+                  <button
+                    onClick={cancelPendingImage}
+                    className="px-3 py-1.5 rounded-xl text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </div>
+              <button
+                onClick={cancelPendingImage}
+                className="shrink-0 p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Input area */}
       <div className="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-surface)]/80 backdrop-blur-xl">
         <div className="flex items-center gap-2 bg-[var(--bg-input)] border border-[var(--border)] rounded-full px-4 py-2">
@@ -382,7 +464,7 @@ export function ChatWindow({
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Message..."
+            placeholder="Сообщение..."
             rows={1}
             className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] resize-none outline-none max-h-32 leading-normal self-center"
             style={{ minHeight: "24px", paddingTop: "2px", paddingBottom: "2px" }}

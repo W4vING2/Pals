@@ -16,11 +16,11 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", icon: Home, label: "Home" },
-  { href: "/search", icon: Search, label: "Search" },
-  { href: "/messages", icon: MessageCircle, label: "Chat" },
-  { href: "/notifications", icon: Bell, label: "Notifications" },
-  { href: "/profile", icon: User, label: "Profile", isDynamic: true },
+  { href: "/", icon: Home, label: "Главная" },
+  { href: "/search", icon: Search, label: "Поиск" },
+  { href: "/messages", icon: MessageCircle, label: "Чат" },
+  { href: "/notifications", icon: Bell, label: "Уведомления" },
+  { href: "/profile", icon: User, label: "Профиль", isDynamic: true },
 ];
 
 const spring = { type: "spring", stiffness: 500, damping: 35, mass: 0.8 } as const;
@@ -65,9 +65,9 @@ export function MobileNavBar() {
 
           // Badge count for this item
           const badgeCount =
-            item.label === "Chat"
+            item.label === "Чат"
               ? unreadMessages
-              : item.label === "Notifications"
+              : item.label === "Уведомления"
               ? unreadCount
               : 0;
 

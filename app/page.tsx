@@ -25,6 +25,7 @@ export default function FeedPage() {
   const [newPostCount, setNewPostCount] = useState(0);
   const [fabVisible, setFabVisible] = useState(true);
   const lastScrollY = useRef(0);
+  const hasLoadedRef = useRef(false);
 
   // Use a ref to track page offset to avoid stale closure in loadPosts
   const pageRef = useRef(0);
@@ -37,49 +38,56 @@ export default function FeedPage() {
     const from = currentPage * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("posts")
-      .select("*, profiles:user_id (id, username, display_name, avatar_url)")
-      .order("created_at", { ascending: false })
-      .range(from, to);
+    // Only show skeleton on first load — never again
+    if (!hasLoadedRef.current) setLoading(true);
 
-    if (!error && data) {
-      const newPosts = data as Post[];
+    try {
+      const { data, error } = await supabase
+        .from("posts")
+        .select("*, profiles:user_id (id, username, display_name, avatar_url)")
+        .order("created_at", { ascending: false })
+        .range(from, to);
 
-      if (reset) {
-        setPosts(newPosts);
-        pageRef.current = 1;
-      } else {
-        setPosts((prev) => {
-          // Deduplicate by id
-          const existingIds = new Set(prev.map((p) => p.id));
-          const unique = newPosts.filter((p) => !existingIds.has(p.id));
-          return [...prev, ...unique];
-        });
-        pageRef.current = currentPage + 1;
-      }
-      setHasMore(newPosts.length === PAGE_SIZE);
+      if (!error && data) {
+        const newPosts = data as Post[];
 
-      // Batch load like statuses for all loaded posts
-      if (user && newPosts.length > 0) {
-        const postIds = newPosts.map((p) => p.id);
-        const { data: likeData } = await supabase
-          .from("likes")
-          .select("post_id")
-          .eq("user_id", user.id)
-          .in("post_id", postIds);
-
-        if (likeData) {
-          const newLikedIds = new Set(likeData.map((l) => l.post_id));
-          setLikedPostIds((prev) => {
-            if (reset) return newLikedIds;
-            const merged = new Set(prev);
-            newLikedIds.forEach((id) => merged.add(id));
-            return merged;
+        if (reset) {
+          setPosts(newPosts);
+          pageRef.current = 1;
+        } else {
+          setPosts((prev) => {
+            // Deduplicate by id
+            const existingIds = new Set(prev.map((p) => p.id));
+            const unique = newPosts.filter((p) => !existingIds.has(p.id));
+            return [...prev, ...unique];
           });
+          pageRef.current = currentPage + 1;
+        }
+        setHasMore(newPosts.length === PAGE_SIZE);
+
+        // Batch load like statuses for all loaded posts
+        if (user && newPosts.length > 0) {
+          const postIds = newPosts.map((p) => p.id);
+          const { data: likeData } = await supabase
+            .from("likes")
+            .select("post_id")
+            .eq("user_id", user.id)
+            .in("post_id", postIds);
+
+          if (likeData) {
+            const newLikedIds = new Set(likeData.map((l) => l.post_id));
+            setLikedPostIds((prev) => {
+              if (reset) return newLikedIds;
+              const merged = new Set(prev);
+              newLikedIds.forEach((id) => merged.add(id));
+              return merged;
+            });
+          }
         }
       }
+      hasLoadedRef.current = true;
+    } catch (err) {
+      console.warn("loadPosts failed:", err);
     }
     setLoading(false);
   }, [user]);
@@ -216,7 +224,7 @@ export default function FeedPage() {
             className="hidden sm:inline-flex"
           >
             <Plus className="w-4 h-4" />
-            New Post
+            Новый пост
           </Button>
         </div>
 
@@ -238,7 +246,7 @@ export default function FeedPage() {
               )}
             >
               <ArrowUp className="w-4 h-4" />
-              {newPostCount} new {newPostCount === 1 ? "post" : "posts"} — tap to refresh
+              Новых постов: {newPostCount} — нажмите для обновления
             </motion.button>
           )}
         </AnimatePresence>

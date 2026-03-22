@@ -134,7 +134,7 @@ export default function SearchPage() {
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search people or posts..."
+              placeholder="Поиск людей и постов..."
               className="w-full bg-[var(--bg-surface)] border border-[var(--border)] rounded-full pl-12 pr-10 py-3.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none input-focus transition-all duration-200"
               autoFocus
             />
@@ -164,10 +164,10 @@ export default function SearchPage() {
             <Search className="w-20 h-20 text-[var(--text-secondary)] opacity-20" />
             <div>
               <p className="font-semibold text-[var(--text-primary)]">
-                No results for &ldquo;{query}&rdquo;
+                Нет результатов по запросу &ldquo;{query}&rdquo;
               </p>
               <p className="text-sm text-[var(--text-secondary)] mt-1">
-                Try a different search term
+                Попробуйте другой запрос
               </p>
             </div>
           </div>
@@ -178,7 +178,7 @@ export default function SearchPage() {
           <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
             <Search className="w-16 h-16 text-[var(--text-secondary)] opacity-20" />
             <p className="text-[var(--text-secondary)] text-sm">
-              Find your people
+              Найдите своих
             </p>
           </div>
         )}
@@ -190,7 +190,7 @@ export default function SearchPage() {
             {users.length > 0 && (
               <section>
                 <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-                  People
+                  Люди
                 </h2>
                 <AnimatedList className="space-y-0 bg-[var(--bg-surface)] rounded-3xl border border-[var(--border)] overflow-hidden">
                   {users.map((u, idx) => {
@@ -237,7 +237,7 @@ export default function SearchPage() {
                             size="sm"
                             onClick={() => toggleFollow(u.id)}
                           >
-                            {followed.has(u.id) ? "Following" : "Follow"}
+                            {followed.has(u.id) ? "Вы подписаны" : "Подписаться"}
                           </Button>
                         )}
                       </div>
@@ -251,7 +251,7 @@ export default function SearchPage() {
             {posts.length > 0 && (
               <section>
                 <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-                  Posts
+                  Посты
                 </h2>
                 <AnimatedList className="space-y-4">
                   {posts.map((post) => (

@@ -59,7 +59,7 @@ export function LikeButton({ liked, count, onToggle, className }: LikeButtonProp
           : "text-[var(--text-secondary)] hover:text-red-400",
         className
       )}
-      aria-label={liked ? "Unlike" : "Like"}
+      aria-label={liked ? "Убрать лайк" : "Лайк"}
     >
       <span className="relative flex items-center justify-center">
         <AnimatePresence mode="wait">

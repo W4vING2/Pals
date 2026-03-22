@@ -29,9 +29,6 @@ export function usePresence() {
           .from("profiles")
           .update({ is_online: true, last_seen: new Date().toISOString() })
           .eq("id", user.id);
-        // Refresh token cache
-        const { data } = await supabase.auth.getSession();
-        tokenRef.current = data?.session?.access_token ?? null;
       } catch { /* ignore */ }
     };
 

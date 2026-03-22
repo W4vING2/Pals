@@ -22,11 +22,11 @@ import type { Notification } from "@/lib/supabase";
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return "сейчас";
+  if (minutes < 60) return `${minutes} мин. назад`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  if (hours < 24) return `${hours} ч. назад`;
+  return `${Math.floor(hours / 24)} дн. назад`;
 }
 
 function NotificationIcon({ type }: { type: Notification["type"] }) {
@@ -64,18 +64,18 @@ function getNotificationText(notification: Notification): string {
   const name =
     notification.profiles?.display_name ??
     notification.profiles?.username ??
-    "Someone";
+    "Кто-то";
   switch (notification.type) {
     case "like":
-      return `${name} liked your post`;
+      return `${name} оценил(а) ваш пост`;
     case "comment":
-      return `${name} commented on your post`;
+      return `${name} прокомментировал(а) ваш пост`;
     case "follow":
-      return `${name} started following you`;
+      return `${name} подписался(-ась) на вас`;
     case "mention":
-      return `${name} mentioned you in a post`;
+      return `${name} упомянул(а) вас в посте`;
     default:
-      return "New notification";
+      return "Новое уведомление";
   }
 }
 
@@ -120,11 +120,11 @@ export default function NotificationsPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold font-display text-[var(--text-primary)]">
-            Notifications
+            Уведомления
           </h1>
           {unreadCount > 0 && (
             <Button variant="ghost" size="sm" onClick={markAllAsRead}>
-              Mark all read
+              Прочитать все
             </Button>
           )}
         </div>
@@ -142,10 +142,10 @@ export default function NotificationsPage() {
             <Bell className="w-16 h-16 text-[var(--text-secondary)] opacity-20" />
             <div>
               <p className="font-semibold text-[var(--text-primary)]">
-                All caught up!
+                Всё прочитано!
               </p>
               <p className="text-sm text-[var(--text-secondary)] mt-1">
-                No notifications yet
+                Пока нет уведомлений
               </p>
             </div>
           </div>

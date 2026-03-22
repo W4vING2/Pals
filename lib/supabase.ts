@@ -104,6 +104,7 @@ export type Message = {
   content: string | null;
   image_url: string | null;
   is_read: boolean;
+  is_edited: boolean;
   created_at: string;
   profiles?: Profile;
   reactions?: MessageReaction[];
@@ -242,6 +243,8 @@ export function getSupabaseBrowserClient() {
           persistSession: true,
           autoRefreshToken: true,
           detectSessionInUrl: true,
+          storageKey: "pals-auth-token",
+          flowType: "pkce",
         },
         realtime: {
           params: {
@@ -250,10 +253,22 @@ export function getSupabaseBrowserClient() {
         },
         global: {
           fetch: (...args) => {
-            return fetch(...args).catch((err) => {
-              console.warn("Supabase fetch error:", err.message);
-              throw err;
-            });
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 15000);
+            const [input, init] = args;
+            return fetch(input, {
+              ...(init as RequestInit),
+              signal: controller.signal,
+            })
+              .catch((err) => {
+                if (err.name === "AbortError") {
+                  console.warn("Supabase fetch timeout (15s):", typeof input === "string" ? input.split("?")[0] : "");
+                  throw new Error("Request timeout");
+                }
+                console.warn("Supabase fetch error:", err.message);
+                throw err;
+              })
+              .finally(() => clearTimeout(timeout));
           },
         },
       }
