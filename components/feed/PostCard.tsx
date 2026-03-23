@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useCallback, useEffect, memo } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -12,7 +11,7 @@ import { LikeButton } from "@/components/shared/LikeButton";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { useAuthStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { ImageLightbox } from "@/components/shared/ImageLightbox";
+import { ImageCarousel } from "@/components/shared/ImageCarousel";
 import type { Post } from "@/lib/supabase";
 
 interface PostCardProps {
@@ -75,8 +74,6 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority, o
   const [commentText, setCommentText] = useState("");
   const [commentLoading, setCommentLoading] = useState(false);
   const [commentCount, setCommentCount] = useState(post.comments_count ?? 0);
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
-
   const profile = post.profiles;
   const name = profile?.display_name ?? profile?.username ?? "Unknown";
 
@@ -225,29 +222,24 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority, o
           {/* Content */}
           {post.content && (
             <p className="text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap">
-              {post.content}
+              {post.content.split(/(#[\wа-яА-ЯёЁ]+)/g).map((part, i) =>
+                part.startsWith("#") ? (
+                  <Link key={i} href={`/search?q=${encodeURIComponent(part)}`}
+                    className="text-[var(--accent-blue)] hover:underline"
+                    onClick={(e) => e.stopPropagation()}>
+                    {part}
+                  </Link>
+                ) : (
+                  <span key={i}>{part}</span>
+                )
+              )}
             </p>
           )}
 
-          {/* Image */}
-          {post.image_url && (
-            <div
-              className="relative rounded-xl overflow-hidden bg-[var(--bg-elevated)] cursor-zoom-in"
-              style={{ aspectRatio: "16/9" }}
-              onClick={(e) => {
-                e.stopPropagation();
-                setLightboxSrc(post.image_url!);
-              }}
-            >
-              <Image
-                src={post.image_url}
-                alt="Post image"
-                fill
-                className="object-cover"
-                sizes="(max-width: 640px) 100vw, 600px"
-                priority={priority}
-                loading={priority ? "eager" : "lazy"}
-              />
+          {/* Image carousel or single image */}
+          {(post.image_urls?.length > 0 || post.image_url) && (
+            <div onClick={(e) => e.stopPropagation()}>
+              <ImageCarousel images={post.image_urls?.length > 0 ? post.image_urls : post.image_url ? [post.image_url] : []} priority={priority} />
             </div>
           )}
 
@@ -373,7 +365,6 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority, o
           </div>
         </CardContent>
       </Card>
-      <ImageLightbox src={lightboxSrc} alt="Post image" onClose={() => setLightboxSrc(null)} />
     </div>
   );
 });

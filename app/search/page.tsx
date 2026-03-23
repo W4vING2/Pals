@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Search, X } from "lucide-react";
@@ -28,11 +28,13 @@ function SkeletonUserRow() {
   );
 }
 
-export default function SearchPage() {
+function SearchPageInner() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { user: storeUser } = useAuthStore();
-  const [query, setQuery] = useState("");
+  const searchParams = useSearchParams();
+  const initialQuery = searchParams.get("q") ?? "";
+  const [query, setQuery] = useState(initialQuery);
   const [users, setUsers] = useState<Profile[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
@@ -85,6 +87,14 @@ export default function SearchPage() {
     if (postsResult.data) setPosts(postsResult.data as Post[]);
     setLoading(false);
   }, []);
+
+  // Sync query from URL params (e.g. when clicking a hashtag link)
+  useEffect(() => {
+    const q = searchParams.get("q") ?? "";
+    if (q && q !== query) {
+      setQuery(q);
+    }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounced search
   useEffect(() => {
@@ -264,5 +274,13 @@ export default function SearchPage() {
         )}
       </div>
     </PageTransition>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense>
+      <SearchPageInner />
+    </Suspense>
   );
 }

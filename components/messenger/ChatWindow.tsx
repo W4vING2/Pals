@@ -14,12 +14,16 @@ import {
   Users,
   Loader2,
   X,
+  Mic,
 } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
+import { VoiceRecorder } from "./VoiceRecorder";
 import { OnlineIndicator } from "@/components/shared/OnlineIndicator";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useTypingIndicator } from "@/hooks/useTypingIndicator";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/store";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 function formatDateSeparator(dateStr: string): string {
   const date = new Date(dateStr);
@@ -49,7 +53,7 @@ interface ChatWindowProps {
   conversation: ConversationWithDetails | null;
   messages: Message[];
   loading: boolean;
-  onSend: (content: string, imageUrl?: string) => Promise<void>;
+  onSend: (content: string, imageUrl?: string, audioUrl?: string) => Promise<void>;
   onUploadImage: (file: File) => Promise<string | null>;
   onEditMessage?: (messageId: string, newContent: string) => void;
   onDeleteMessage?: (messageId: string) => void;
@@ -100,6 +104,7 @@ export function ChatWindow({
 }: ChatWindowProps) {
   const { user } = useAuthStore();
   const router = useRouter();
+  const { typingUsers, broadcastTyping } = useTypingIndicator(conversation?.id ?? null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -108,6 +113,7 @@ export function ChatWindow({
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
   const [caption, setCaption] = useState("");
+  const [voiceMode, setVoiceMode] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Track message IDs that were loaded initially (no animation needed)
@@ -384,6 +390,30 @@ export function ChatWindow({
         <div ref={bottomRef} />
       </div>
 
+      {/* Typing indicator */}
+      <AnimatePresence>
+        {typingUsers.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.15 }}
+            className="px-4 py-1"
+          >
+            <span className="text-xs text-[var(--text-secondary)] flex items-center gap-1.5">
+              <span className="flex gap-0.5">
+                <span className="w-1 h-1 rounded-full bg-[var(--text-secondary)] animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="w-1 h-1 rounded-full bg-[var(--text-secondary)] animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="w-1 h-1 rounded-full bg-[var(--text-secondary)] animate-bounce" style={{ animationDelay: "300ms" }} />
+              </span>
+              {typingUsers.length === 1
+                ? `${typingUsers[0].displayName} печатает`
+                : "Печатают..."}
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {uploadError && (
         <div className="px-4 py-2 bg-red-500/10 text-red-400 text-xs text-center">
           {uploadError}
@@ -442,54 +472,85 @@ export function ChatWindow({
       {/* Input area */}
       <div className="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-surface)]/80 backdrop-blur-xl">
         <div className="flex items-center gap-2 bg-[var(--bg-input)] border border-[var(--border)] rounded-full px-4 py-2">
-          {/* Image upload */}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="text-[var(--text-secondary)] hover:text-[var(--accent-blue)] transition-colors shrink-0 flex items-center justify-center w-8 h-8"
-            aria-label="Upload image"
-          >
-            <Paperclip className="w-5 h-5" />
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleImageUpload}
-          />
+          {voiceMode ? (
+            <VoiceRecorder
+              onRecorded={async (blob) => {
+                setVoiceMode(false);
+                if (!user) return;
+                const supabase = getSupabaseBrowserClient();
+                const ext = blob.type.includes("webm") ? "webm" : "mp4";
+                const path = `voice/${user.id}/${Date.now()}.${ext}`;
+                const { error } = await supabase.storage.from("media").upload(path, blob, { upsert: false });
+                if (error) {
+                  console.error("Voice upload error:", error);
+                  return;
+                }
+                const { data } = supabase.storage.from("media").getPublicUrl(path);
+                await onSend("", undefined, data.publicUrl);
+              }}
+              onCancel={() => setVoiceMode(false)}
+            />
+          ) : (
+            <>
+              {/* Image upload */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="text-[var(--text-secondary)] hover:text-[var(--accent-blue)] transition-colors shrink-0 flex items-center justify-center w-8 h-8"
+                aria-label="Загрузить изображение"
+              >
+                <Paperclip className="w-5 h-5" />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageUpload}
+              />
 
-          {/* Text input */}
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Сообщение..."
-            rows={1}
-            className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] resize-none outline-none max-h-32 leading-normal self-center"
-            style={{ minHeight: "24px", paddingTop: "2px", paddingBottom: "2px" }}
-          />
+              {/* Text input */}
+              <textarea
+                value={text}
+                onChange={(e) => { setText(e.target.value); broadcastTyping(); }}
+                onKeyDown={handleKeyDown}
+                placeholder="Сообщение..."
+                rows={1}
+                className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] resize-none outline-none max-h-32 leading-normal self-center"
+                style={{ minHeight: "24px", paddingTop: "2px", paddingBottom: "2px" }}
+              />
 
-          {/* Send */}
-          <motion.button
-            onClick={handleSend}
-            disabled={!text.trim() || sending}
-            animate={
-              justSent
-                ? { rotate: [0, -15, 15, 0], scale: [1, 1.15, 1] }
-                : { rotate: 0, scale: 1 }
-            }
-            transition={{ duration: 0.3 }}
-            className={cn(
-              "shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150",
-              text.trim()
-                ? "bg-[var(--accent-blue)] text-white hover:bg-[var(--accent-blue-hover)]"
-                : "text-[var(--text-secondary)]"
-            )}
-            aria-label="Send"
-          >
-            <SendHorizontal className="w-4 h-4" />
-          </motion.button>
+              {/* Mic button */}
+              <button
+                onClick={() => setVoiceMode(true)}
+                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--accent-blue)] transition-colors"
+                aria-label="Голосовое сообщение"
+              >
+                <Mic className="w-5 h-5" />
+              </button>
+
+              {/* Send */}
+              <motion.button
+                onClick={handleSend}
+                disabled={!text.trim() || sending}
+                animate={
+                  justSent
+                    ? { rotate: [0, -15, 15, 0], scale: [1, 1.15, 1] }
+                    : { rotate: 0, scale: 1 }
+                }
+                transition={{ duration: 0.3 }}
+                className={cn(
+                  "shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150",
+                  text.trim()
+                    ? "bg-[var(--accent-blue)] text-white hover:bg-[var(--accent-blue-hover)]"
+                    : "text-[var(--text-secondary)]"
+                )}
+                aria-label="Отправить"
+              >
+                <SendHorizontal className="w-4 h-4" />
+              </motion.button>
+            </>
+          )}
         </div>
       </div>
     </div>

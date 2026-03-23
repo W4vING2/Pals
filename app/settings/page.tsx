@@ -15,8 +15,10 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { PageTransition } from "@/components/layout/PageTransition";
-import { Loader2, Check, AlertTriangle } from "lucide-react";
+import { Loader2, Check, AlertTriangle, Ban, Bell, BellOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
+import { isPushSupported, subscribeToPush, unsubscribeFromPush, isSubscribedToPush } from "@/lib/push";
 import type { Profile } from "@/lib/supabase";
 
 export default function SettingsPage() {
@@ -37,6 +39,15 @@ export default function SettingsPage() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSaved, setPasswordSaved] = useState(false);
 
+  // Push notifications
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
+
+  // Blocked users
+  const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
+  const [loadingBlocked, setLoadingBlocked] = useState(true);
+
   // Danger zone
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -44,6 +55,35 @@ export default function SettingsPage() {
   React.useEffect(() => {
     if (!user) router.replace("/auth");
   }, [user, router]);
+
+  // Check push notification status
+  React.useEffect(() => {
+    isPushSupported().then(setPushSupported);
+    isSubscribedToPush().then(setPushEnabled);
+  }, []);
+
+  const loadBlockedUsers = React.useCallback(async () => {
+    if (!user) return;
+    setLoadingBlocked(true);
+    const supabase = getSupabaseBrowserClient();
+    const { data } = await supabase
+      .from("blocked_users")
+      .select("blocked_id, profiles:blocked_id(id, username, display_name, avatar_url)")
+      .eq("blocker_id", user.id);
+    setBlockedUsers(data ?? []);
+    setLoadingBlocked(false);
+  }, [user]);
+
+  React.useEffect(() => {
+    loadBlockedUsers();
+  }, [loadBlockedUsers]);
+
+  const handleUnblock = async (blockedId: string) => {
+    if (!user) return;
+    const supabase = getSupabaseBrowserClient();
+    await supabase.from("blocked_users").delete().eq("blocker_id", user.id).eq("blocked_id", blockedId);
+    setBlockedUsers((prev) => prev.filter((b) => b.blocked_id !== blockedId));
+  };
 
   const saveProfileHandler = async () => {
     if (!user) return;
@@ -247,6 +287,121 @@ export default function SettingsPage() {
                 </Button>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Push Notifications */}
+        {pushSupported && (
+          <Card className="bg-[var(--bg-surface)] border-[var(--border)]">
+            <CardHeader>
+              <CardTitle className="text-[var(--text-primary)] flex items-center gap-2">
+                {pushEnabled ? <Bell className="size-4" /> : <BellOff className="size-4" />}
+                Уведомления
+              </CardTitle>
+              <CardDescription className="text-[var(--text-secondary)]">
+                Push-уведомления о новых сообщениях
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-[var(--text-primary)]">
+                    {pushEnabled ? "Уведомления включены" : "Уведомления выключены"}
+                  </p>
+                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                    {pushEnabled
+                      ? "Вы будете получать уведомления о новых сообщениях"
+                      : "Включите, чтобы не пропускать сообщения"}
+                  </p>
+                </div>
+                <Button
+                  variant={pushEnabled ? "secondary" : "default"}
+                  size="sm"
+                  disabled={pushLoading}
+                  onClick={async () => {
+                    if (!user) return;
+                    setPushLoading(true);
+                    if (pushEnabled) {
+                      await unsubscribeFromPush(user.id);
+                      setPushEnabled(false);
+                    } else {
+                      const ok = await subscribeToPush(user.id);
+                      setPushEnabled(ok);
+                    }
+                    setPushLoading(false);
+                  }}
+                >
+                  {pushLoading ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : pushEnabled ? (
+                    "Выключить"
+                  ) : (
+                    "Включить"
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Blocked Users */}
+        <Card className="bg-[var(--bg-surface)] border-[var(--border)]">
+          <CardHeader>
+            <CardTitle className="text-[var(--text-primary)] flex items-center gap-2">
+              <Ban className="size-4" />
+              Заблокированные
+            </CardTitle>
+            <CardDescription className="text-[var(--text-secondary)]">
+              Пользователи, которых вы заблокировали
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingBlocked ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="size-5 animate-spin text-[var(--text-secondary)]" />
+              </div>
+            ) : blockedUsers.length === 0 ? (
+              <p className="text-sm text-[var(--text-secondary)] text-center py-6">
+                Нет заблокированных пользователей
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {blockedUsers.map((item) => {
+                  const p = item.profiles;
+                  if (!p) return null;
+                  const name = p.display_name ?? p.username;
+                  return (
+                    <div
+                      key={item.blocked_id}
+                      className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl hover:bg-[var(--bg-elevated)] transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar className="size-9">
+                          {p.avatar_url ? (
+                            <AvatarImage src={p.avatar_url} alt={name} />
+                          ) : null}
+                          <AvatarFallback className="text-xs bg-[var(--bg-elevated)] text-[var(--text-primary)]">
+                            {name.slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="text-sm font-medium text-[var(--text-primary)]">{name}</p>
+                          <p className="text-xs text-[var(--text-secondary)]">@{p.username}</p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleUnblock(item.blocked_id)}
+                        className="rounded-xl border-[var(--border)] text-red-400 hover:bg-red-400/10"
+                      >
+                        Разблокировать
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
 

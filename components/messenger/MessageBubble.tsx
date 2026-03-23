@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Check, CheckCheck, Pencil, Trash2, X, CornerDownLeft, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ImageLightbox } from "@/components/shared/ImageLightbox";
+import { AudioPlayer } from "./AudioPlayer";
 import { useAuthStore } from "@/lib/store";
 import type { Message } from "@/lib/supabase";
 
@@ -200,6 +201,15 @@ export const MessageBubble = memo(function MessageBubble({
               onClose={() => setLightboxOpen(false)}
             />
           </>
+        )}
+
+        {message.audio_url && (
+          <div className={cn(
+            "px-3 py-2 rounded-2xl",
+            isOwn ? "bg-[var(--accent-blue)] text-white rounded-br-md" : "bg-[var(--bg-surface)] text-[var(--text-primary)] rounded-bl-md border border-[var(--border)]"
+          )}>
+            <AudioPlayer src={message.audio_url} isOwn={isOwn} />
+          </div>
         )}
 
         {editing ? (

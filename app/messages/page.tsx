@@ -89,9 +89,9 @@ export default function MessagesPage() {
   const activeConv =
     conversations.find((c) => c.id === activeConversationId) ?? null;
 
-  const handleSend = async (content: string, imageUrl?: string) => {
+  const handleSend = async (content: string, imageUrl?: string, audioUrl?: string) => {
     if (!activeConversationId) return;
-    await sendMessage(activeConversationId, content, imageUrl);
+    await sendMessage(activeConversationId, content, imageUrl, audioUrl);
   };
 
   const handleInitiateCall = async (type: "voice" | "video") => {

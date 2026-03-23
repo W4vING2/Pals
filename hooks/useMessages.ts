@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Conversation, Message, MessageReaction, ConversationParticipant, ProfileSummary } from "@/lib/supabase";
 import { useAuthStore, useUnreadMessagesStore } from "@/lib/store";
+import { sendPushNotification } from "@/lib/sendPushNotification";
 
 export type ParticipantWithProfile = ConversationParticipant & { profiles: ProfileSummary };
 
@@ -13,7 +14,7 @@ export type ConversationWithDetails = Conversation & {
 };
 
 export function useMessages() {
-  const { user } = useAuthStore();
+  const { user, profile: storeProfile } = useAuthStore();
   const [conversations, setConversations] = useState<ConversationWithDetails[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -189,7 +190,7 @@ export function useMessages() {
   }, [user, loadReactionsForMessages, refreshBadgeCount]);
 
   const sendMessage = useCallback(
-    async (conversationId: string, content: string, imageUrl?: string) => {
+    async (conversationId: string, content: string, imageUrl?: string, audioUrl?: string) => {
       if (!user) return;
       const supabase = getSupabaseBrowserClient();
 
@@ -201,7 +202,8 @@ export function useMessages() {
         sender_id: user.id,
         content: content || null,
         image_url: imageUrl ?? null,
-        message_type: "text",
+        audio_url: audioUrl ?? null,
+        message_type: audioUrl ? "voice" : "text",
         is_read: false,
         is_edited: false,
         created_at: new Date().toISOString(),
@@ -218,6 +220,7 @@ export function useMessages() {
           sender_id: user.id,
           content: content || null,
           image_url: imageUrl ?? null,
+          ...(audioUrl ? { audio_url: audioUrl, message_type: "voice" as const } : {}),
         })
         .select()
         .single();
@@ -244,7 +247,7 @@ export function useMessages() {
       await supabase
         .from("conversations")
         .update({
-          last_message: content || "\ud83d\udcf7 Image",
+          last_message: audioUrl ? "\uD83C\uDFA4 Голосовое сообщение" : content || "\ud83d\udcf7 Image",
           last_message_at: new Date().toISOString(),
         })
         .eq("id", conversationId);
@@ -254,6 +257,28 @@ export function useMessages() {
         p_conversation_id: conversationId,
         p_sender_id: user.id,
       });
+
+      // Send push notifications to other participants
+      const { data: participants } = await supabase
+        .from("conversation_participants")
+        .select("user_id")
+        .eq("conversation_id", conversationId)
+        .neq("user_id", user.id);
+      if (participants) {
+        const senderName = storeProfile?.display_name ?? storeProfile?.username ?? "Pals";
+        const pushBody = audioUrl
+          ? "🎤 Голосовое сообщение"
+          : content || "📷 Фото";
+        for (const p of participants) {
+          sendPushNotification({
+            userId: p.user_id,
+            title: senderName,
+            message: pushBody,
+            url: "/messages",
+            tag: `msg-${conversationId}`,
+          });
+        }
+      }
     },
     [user]
   );

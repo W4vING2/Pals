@@ -295,6 +295,8 @@ create table if not exists public.messages (
   sender_id        uuid not null references public.profiles(id) on delete cascade,
   content          text,
   image_url        text,
+  audio_url        text,
+  message_type     text not null default 'text',
   is_read          boolean not null default false,
   is_edited        boolean not null default false,
   created_at       timestamptz not null default now()
@@ -539,3 +541,90 @@ for each row execute function set_updated_at();
 create trigger trg_conversations_updated_at
 before update on public.conversations
 for each row execute function set_updated_at();
+
+-- ── blocked_users ────────────────────────────────────────────
+create table if not exists public.blocked_users (
+  id          uuid primary key default gen_random_uuid(),
+  blocker_id  uuid not null references public.profiles(id) on delete cascade,
+  blocked_id  uuid not null references public.profiles(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  unique (blocker_id, blocked_id)
+);
+
+create index if not exists idx_blocked_blocker on public.blocked_users(blocker_id);
+create index if not exists idx_blocked_blocked on public.blocked_users(blocked_id);
+
+alter table public.blocked_users enable row level security;
+
+create policy "Users can view own blocks"
+  on public.blocked_users for select using (blocker_id = auth.uid());
+
+create policy "Users can block"
+  on public.blocked_users for insert with check (auth.uid() = blocker_id);
+
+create policy "Users can unblock"
+  on public.blocked_users for delete using (auth.uid() = blocker_id);
+
+-- ── stories ─────────────────────────────────────────────────
+create table if not exists public.stories (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references public.profiles(id) on delete cascade,
+  image_url     text,
+  text_content  text,
+  bg_color      text default '#1a1a2e',
+  created_at    timestamptz not null default now(),
+  expires_at    timestamptz not null default (now() + interval '24 hours')
+);
+
+create index if not exists idx_stories_user on public.stories(user_id);
+create index if not exists idx_stories_expires on public.stories(expires_at);
+
+alter table public.stories enable row level security;
+
+create policy "Active stories are viewable by everyone"
+  on public.stories for select using (expires_at > now());
+
+create policy "Users can create stories"
+  on public.stories for insert with check (auth.uid() = user_id);
+
+create policy "Users can delete own stories"
+  on public.stories for delete using (auth.uid() = user_id);
+
+-- ── story_views ─────────────────────────────────────────────
+create table if not exists public.story_views (
+  id         uuid primary key default gen_random_uuid(),
+  story_id   uuid not null references public.stories(id) on delete cascade,
+  viewer_id  uuid not null references public.profiles(id) on delete cascade,
+  viewed_at  timestamptz not null default now(),
+  unique (story_id, viewer_id)
+);
+
+alter table public.story_views enable row level security;
+
+create policy "Story authors can view their story views"
+  on public.story_views for select
+  using (story_id in (select id from public.stories where user_id = auth.uid()));
+
+create policy "Users can mark stories as viewed"
+  on public.story_views for insert with check (auth.uid() = viewer_id);
+
+-- ── push_subscriptions ──────────────────────────────────────
+create table if not exists public.push_subscriptions (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  endpoint   text not null,
+  keys_p256dh text not null,
+  keys_auth  text not null,
+  platform   text not null default 'web',
+  created_at timestamptz not null default now(),
+  unique (user_id, endpoint)
+);
+create index idx_push_subs_user on public.push_subscriptions(user_id);
+alter table public.push_subscriptions enable row level security;
+
+create policy "Users can view own subscriptions"
+  on public.push_subscriptions for select using (user_id = auth.uid());
+create policy "Users can create subscriptions"
+  on public.push_subscriptions for insert with check (auth.uid() = user_id);
+create policy "Users can delete subscriptions"
+  on public.push_subscriptions for delete using (auth.uid() = user_id);

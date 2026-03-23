@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "690158143044",
+    "project_id": "pals-560da",
+    "storage_bucket": "pals-560da.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:690158143044:android:b98ddcaceb5970e932de11",
+        "android_client_info": {
+          "package_name": "com.waving.pals"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCdMC8Wiw69nk9EZzzpw-hHx2h00k_JLFI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

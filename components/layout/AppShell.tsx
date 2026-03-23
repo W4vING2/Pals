@@ -86,6 +86,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [loading, showSplash]);
 
+  // Initialize Capacitor push notifications on native app
+  useEffect(() => {
+    if (!user) return;
+    const isNative = !!(window as any).Capacitor?.isNativePlatform?.();
+    if (!isNative) return;
+
+    (async () => {
+      try {
+        const { PushNotifications } = await import("@capacitor/push-notifications");
+
+        // Listen for notification taps
+        PushNotifications.addListener("pushNotificationActionPerformed", (notification) => {
+          const url = notification.notification?.data?.url;
+          if (url) window.location.href = url;
+        });
+      } catch {
+        // Plugin not available
+      }
+    })();
+  }, [user]);
+
   const isAuthPage = AUTH_PATHS.some((p) => pathname.startsWith(p));
   const showNav = !isAuthPage && !!user && !loading;
 

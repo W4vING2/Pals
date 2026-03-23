@@ -26,6 +26,7 @@ export type Post = {
   user_id: string;
   content: string;
   image_url: string | null;
+  image_urls: string[];
   likes_count: number;
   comments_count: number;
   created_at: string;
@@ -103,7 +104,8 @@ export type Message = {
   sender_id: string;
   content: string | null;
   image_url: string | null;
-  message_type: "text" | "system";
+  audio_url: string | null;
+  message_type: "text" | "system" | "voice";
   is_read: boolean;
   is_edited: boolean;
   created_at: string;
@@ -123,6 +125,24 @@ export type Notification = {
   is_read: boolean;
   created_at: string;
   profiles?: Profile;
+};
+
+export type Story = {
+  id: string;
+  user_id: string;
+  image_url: string | null;
+  text_content: string | null;
+  bg_color: string;
+  created_at: string;
+  expires_at: string;
+  profiles?: Profile;
+};
+
+export type StoryView = {
+  id: string;
+  story_id: string;
+  viewer_id: string;
+  viewed_at: string;
 };
 
 export type CallSignal = {
@@ -153,7 +173,7 @@ export type Database = {
       >;
       posts: TableDef<
         Post,
-        { user_id: string; content?: string | null; image_url?: string | null; likes_count?: number; comments_count?: number },
+        { user_id: string; content?: string | null; image_url?: string | null; image_urls?: string[]; likes_count?: number; comments_count?: number },
         Partial<{ user_id: string; content: string | null; image_url: string | null; updated_at: string }>
       >;
       likes: TableDef<
@@ -183,8 +203,8 @@ export type Database = {
       >;
       messages: TableDef<
         Message,
-        { conversation_id: string; sender_id: string; content?: string | null; image_url?: string | null; message_type?: "text" | "system" },
-        Partial<{ content: string | null; image_url: string | null; is_read: boolean }>
+        { conversation_id: string; sender_id: string; content?: string | null; image_url?: string | null; message_type?: "text" | "system" | "voice"; audio_url?: string | null },
+        Partial<{ content: string | null; image_url: string | null; is_read: boolean; audio_url: string | null }>
       >;
       notifications: TableDef<
         Notification,
@@ -200,6 +220,26 @@ export type Database = {
         CallSignal,
         { conversation_id: string; caller_id: string; callee_id: string; type: "offer" | "answer" | "ice-candidate" | "hang-up"; call_type: "voice" | "video"; signal: string },
         Partial<CallSignal>
+      >;
+      stories: TableDef<
+        Story,
+        { user_id: string; image_url?: string | null; text_content?: string | null; bg_color?: string },
+        never
+      >;
+      story_views: TableDef<
+        StoryView,
+        { story_id: string; viewer_id: string },
+        never
+      >;
+      blocked_users: TableDef<
+        { id: string; blocker_id: string; blocked_id: string; created_at: string },
+        { blocker_id: string; blocked_id: string },
+        never
+      >;
+      push_subscriptions: TableDef<
+        { id: string; user_id: string; endpoint: string; keys_p256dh: string; keys_auth: string; platform: string; created_at: string },
+        { user_id: string; endpoint: string; keys_p256dh: string; keys_auth: string; platform?: string },
+        never
       >;
     };
     Views: Record<string, never>;

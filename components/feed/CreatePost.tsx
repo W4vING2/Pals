@@ -22,6 +22,8 @@ interface CreatePostProps {
   onCreated?: () => void;
 }
 
+const MAX_IMAGES = 6;
+
 function getInitials(name: string): string {
   return name
     .split(" ")
@@ -35,8 +37,8 @@ function getInitials(name: string): string {
 export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
   const { user, profile } = useAuthStore();
   const [content, setContent] = useState("");
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,65 +46,93 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      setError("Изображение должно быть менее 10 МБ");
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+
+    const remaining = MAX_IMAGES - imageFiles.length;
+    if (remaining <= 0) {
+      setError(`Максимум ${MAX_IMAGES} фото`);
       return;
     }
-    setImageFile(file);
-    const reader = new FileReader();
-    reader.onload = () => setImagePreview(reader.result as string);
-    reader.readAsDataURL(file);
-    setError(null);
-  };
 
-  const removeImage = () => {
-    setImageFile(null);
-    setImagePreview(null);
+    const selected = files.slice(0, remaining);
+    const oversized = selected.find((f) => f.size > 10 * 1024 * 1024);
+    if (oversized) {
+      setError("Каждое изображение должно быть менее 10 МБ");
+      return;
+    }
+
+    setError(null);
+    setImageFiles((prev) => [...prev, ...selected]);
+
+    selected.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () =>
+        setImagePreviews((prev) => [...prev, reader.result as string]);
+      reader.readAsDataURL(file);
+    });
+
+    // Reset input so re-selecting same files works
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const removeImage = (idx: number) => {
+    setImageFiles((prev) => prev.filter((_, i) => i !== idx));
+    setImagePreviews((prev) => prev.filter((_, i) => i !== idx));
+  };
+
   const handleSubmit = async () => {
-    if (!user || (!content.trim() && !imageFile)) return;
+    if (!user || (!content.trim() && imageFiles.length === 0)) return;
     setSubmitting(true);
     setError(null);
     const supabase = getSupabaseBrowserClient();
 
-    let imageUrl: string | null = null;
+    let imageUrls: string[] = [];
 
-    if (imageFile) {
+    if (imageFiles.length > 0) {
       setUploading(true);
-      const ext = imageFile.name.split(".").pop();
-      const path = `posts/${user.id}/${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("media")
-        .upload(path, imageFile);
+      const timestamp = Date.now();
 
-      if (uploadError) {
-        setError("Не удалось загрузить изображение");
+      const uploadResults = await Promise.all(
+        imageFiles.map(async (file, i) => {
+          const ext = file.name.split(".").pop();
+          const path = `posts/${user.id}/${timestamp}_${i}.${ext}`;
+          const { error: uploadError } = await supabase.storage
+            .from("media")
+            .upload(path, file);
+
+          if (uploadError) return null;
+
+          const { data } = supabase.storage.from("media").getPublicUrl(path);
+          return data.publicUrl;
+        })
+      );
+
+      const failed = uploadResults.some((r) => r === null);
+      if (failed) {
+        setError("Не удалось загрузить некоторые изображения");
         setUploading(false);
         setSubmitting(false);
         return;
       }
 
-      const { data } = supabase.storage.from("media").getPublicUrl(path);
-      imageUrl = data.publicUrl;
+      imageUrls = uploadResults as string[];
       setUploading(false);
     }
 
     const { error: insertError } = await supabase.from("posts").insert({
       user_id: user.id,
       content: content.trim() || null,
-      image_url: imageUrl,
+      image_url: imageUrls.length > 0 ? imageUrls[0] : null,
+      image_urls: imageUrls,
     });
 
     if (insertError) {
       setError("Не удалось создать пост");
     } else {
       setContent("");
-      setImageFile(null);
-      setImagePreview(null);
+      setImageFiles([]);
+      setImagePreviews([]);
       onCreated?.();
       onClose();
     }
@@ -119,7 +149,7 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
   }, [content]);
 
   const name = profile?.display_name ?? profile?.username ?? "Вы";
-  const canSubmit = (content.trim().length > 0 || imageFile !== null) && !submitting;
+  const canSubmit = (content.trim().length > 0 || imageFiles.length > 0) && !submitting;
 
   return (
     <Dialog open={open} onOpenChange={(isOpen: boolean) => { if (!isOpen) onClose(); }}>
@@ -175,28 +205,35 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
             </span>
           </div>
 
-          {/* Image preview */}
-          {imagePreview && (
-            <div className="relative rounded-xl overflow-hidden bg-[var(--bg-elevated)]">
-              <Image
-                src={imagePreview}
-                alt="Preview"
-                width={600}
-                height={400}
-                className="w-full object-cover max-h-64"
-                style={{ width: "auto", height: "auto" }}
-              />
-              <button
-                onClick={removeImage}
-                className={cn(
-                  "absolute top-2 right-2 w-7 h-7 rounded-full",
-                  "bg-black/60 text-white flex items-center justify-center",
-                  "hover:bg-black/80 transition-colors"
-                )}
-                aria-label="Remove image"
-              >
-                <X className="w-4 h-4" />
-              </button>
+          {/* Image previews grid */}
+          {imagePreviews.length > 0 && (
+            <div className={cn(
+              "grid gap-2",
+              imagePreviews.length === 1 && "grid-cols-1",
+              imagePreviews.length === 2 && "grid-cols-2",
+              imagePreviews.length >= 3 && "grid-cols-3"
+            )}>
+              {imagePreviews.map((src, i) => (
+                <div key={i} className="relative rounded-xl overflow-hidden bg-[var(--bg-elevated)] aspect-square">
+                  <Image
+                    src={src}
+                    alt={`Превью ${i + 1}`}
+                    fill
+                    className="object-cover"
+                  />
+                  <button
+                    onClick={() => removeImage(i)}
+                    className={cn(
+                      "absolute top-1.5 right-1.5 w-6 h-6 rounded-full",
+                      "bg-black/60 text-white flex items-center justify-center",
+                      "hover:bg-black/80 transition-colors"
+                    )}
+                    aria-label="Удалить фото"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
 
@@ -206,22 +243,32 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
         </div>
 
         <DialogFooter className="flex-row items-center justify-between">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className={cn(
-              "flex items-center gap-2 px-3 py-2 rounded-xl text-sm",
-              "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)]",
-              "transition-colors"
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={imageFiles.length >= MAX_IMAGES}
+              className={cn(
+                "flex items-center gap-2 px-3 py-2 rounded-xl text-sm",
+                "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)]",
+                "transition-colors",
+                imageFiles.length >= MAX_IMAGES && "opacity-50 cursor-not-allowed"
+              )}
+            >
+              <ImageIcon className="w-5 h-5" />
+              Фото
+            </button>
+            {imageFiles.length > 0 && (
+              <span className="text-xs text-[var(--text-secondary)]">
+                {imageFiles.length}/{MAX_IMAGES}
+              </span>
             )}
-          >
-            <ImageIcon className="w-5 h-5" />
-            Фото
-          </button>
+          </div>
 
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
+            multiple
             className="hidden"
             onChange={handleImageSelect}
           />

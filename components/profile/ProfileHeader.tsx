@@ -27,9 +27,13 @@ import {
   UserPlus,
   X,
   Loader2,
+  MoreHorizontal,
+  Ban,
 } from "lucide-react";
+import { useBlockedUsers } from "@/hooks/useBlockedUsers";
 import { cn } from "@/lib/utils";
-import type { Profile } from "@/lib/supabase";
+import { StoryViewer } from "@/components/stories/StoryViewer";
+import type { Profile, Story } from "@/lib/supabase";
 
 interface ProfileHeaderProps {
   profile: Profile;
@@ -46,6 +50,36 @@ export function ProfileHeader({
 }: ProfileHeaderProps) {
   const { user, setProfile: setStoreProfile } = useAuthStore();
   const router = useRouter();
+  const { isBlocked, blockUser, unblockUser } = useBlockedUsers();
+  const blocked = isBlocked(profile.id);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [profileStories, setProfileStories] = useState<Story[] | null>(null);
+  const [hasStories, setHasStories] = useState(false);
+
+  // Check if this user has active stories
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+    supabase
+      .from("stories")
+      .select("id")
+      .eq("user_id", profile.id)
+      .gt("expires_at", new Date().toISOString())
+      .limit(1)
+      .then(({ data }) => setHasStories((data?.length ?? 0) > 0));
+  }, [profile.id]);
+
+  const openStories = async () => {
+    const supabase = getSupabaseBrowserClient();
+    const { data } = await supabase
+      .from("stories")
+      .select("*, profiles:user_id(id, username, display_name, avatar_url)")
+      .eq("user_id", profile.id)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: true });
+    if (data && data.length > 0) {
+      setProfileStories(data as Story[]);
+    }
+  };
   const [following, setFollowing] = useState(false);
   const [followPending, setFollowPending] = useState(false);
   const [localFollowersCount, setLocalFollowersCount] = useState(
@@ -71,6 +105,19 @@ export function ProfileHeader({
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu on click outside
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
 
   const name = profile.display_name ?? profile.username;
 
@@ -354,21 +401,25 @@ export function ProfileHeader({
         {/* Avatar row */}
         <div className="flex items-end justify-between">
           <div className="relative">
-            {/* Animated gradient ring */}
+            {/* Animated gradient ring — active when user has stories */}
             <motion.div
               className="absolute -inset-1 rounded-full"
               style={{
-                background:
-                  "conic-gradient(from 0deg, #a855f7, #00e676, #7c3aed, #a855f7)",
+                background: hasStories
+                  ? "conic-gradient(from 0deg, #a855f7, #00e676, #7c3aed, #a855f7)"
+                  : "var(--border)",
               }}
-              animate={{ rotate: 360 }}
-              transition={{
+              animate={hasStories ? { rotate: 360 } : {}}
+              transition={hasStories ? {
                 duration: 4,
                 repeat: Infinity,
                 ease: "linear",
-              }}
+              } : {}}
             />
-            <div className="relative rounded-full bg-[var(--bg-base)] p-[3px]">
+            <div
+              className={cn("relative rounded-full bg-[var(--bg-base)] p-[3px]", hasStories && "cursor-pointer")}
+              onClick={hasStories ? openStories : undefined}
+            >
               <Avatar className="size-20">
                 {profile.avatar_url ? (
                   <AvatarImage src={profile.avatar_url} alt={name} />
@@ -417,48 +468,76 @@ export function ProfileHeader({
               </Button>
             ) : (
               <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onMessageClick}
-                  className="rounded-xl text-[var(--text-secondary)]"
-                >
-                  <MessageCircle className="size-4" />
-                  Сообщение
-                </Button>
-                <motion.div whileTap={{ scale: 0.95 }}>
-                  <Button
-                    variant={following ? "outline" : "default"}
-                    size="sm"
-                    disabled={followPending}
-                    onClick={toggleFollow}
-                    className={cn(
-                      "rounded-xl transition-all duration-300",
-                      following
-                        ? "border-[var(--accent-blue)]/50 text-[var(--accent-blue)]"
-                        : "bg-[var(--accent-blue)] text-white hover:bg-[var(--accent-blue)]/90"
-                    )}
-                  >
-                    {followPending ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : following ? (
-                      <UserCheck className="size-4" />
-                    ) : (
-                      <UserPlus className="size-4" />
-                    )}
-                    <AnimatePresence mode="wait">
-                      <motion.span
-                        key={following ? "following" : "follow"}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -6 }}
-                        transition={{ duration: 0.15 }}
+                {blocked ? (
+                  <p className="text-sm text-red-400 bg-red-400/10 px-3 py-1.5 rounded-xl">
+                    Пользователь заблокирован
+                  </p>
+                ) : (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onMessageClick}
+                      className="rounded-xl text-[var(--text-secondary)]"
+                    >
+                      <MessageCircle className="size-4" />
+                      Сообщение
+                    </Button>
+                    <motion.div whileTap={{ scale: 0.95 }}>
+                      <Button
+                        variant={following ? "outline" : "default"}
+                        size="sm"
+                        disabled={followPending}
+                        onClick={toggleFollow}
+                        className={cn(
+                          "rounded-xl transition-all duration-300",
+                          following
+                            ? "border-[var(--accent-blue)]/50 text-[var(--accent-blue)]"
+                            : "bg-[var(--accent-blue)] text-white hover:bg-[var(--accent-blue)]/90"
+                        )}
                       >
-                        {following ? "Подписки" : "Подписаться"}
-                      </motion.span>
-                    </AnimatePresence>
-                  </Button>
-                </motion.div>
+                        {followPending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : following ? (
+                          <UserCheck className="size-4" />
+                        ) : (
+                          <UserPlus className="size-4" />
+                        )}
+                        <AnimatePresence mode="wait">
+                          <motion.span
+                            key={following ? "following" : "follow"}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.15 }}
+                          >
+                            {following ? "Подписки" : "Подписаться"}
+                          </motion.span>
+                        </AnimatePresence>
+                      </Button>
+                    </motion.div>
+                  </>
+                )}
+                <div className="relative" ref={menuRef}>
+                  <button onClick={() => setMenuOpen(!menuOpen)} className="p-2 rounded-xl hover:bg-[var(--bg-elevated)] transition-colors">
+                    <MoreHorizontal className="size-5 text-[var(--text-secondary)]" />
+                  </button>
+                  {menuOpen && (
+                    <div className="absolute right-0 top-full mt-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl shadow-lg z-50 overflow-hidden min-w-[180px]">
+                      <button
+                        onClick={async () => {
+                          if (blocked) { await unblockUser(profile.id); }
+                          else { await blockUser(profile.id); }
+                          setMenuOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-400 hover:bg-[var(--bg-surface)] transition-colors"
+                      >
+                        <Ban className="size-4" />
+                        {blocked ? "Разблокировать" : "Заблокировать"}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -669,6 +748,15 @@ export function ProfileHeader({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Story viewer */}
+      {profileStories && (
+        <StoryViewer
+          stories={profileStories}
+          startIndex={0}
+          onClose={() => setProfileStories(null)}
+        />
+      )}
     </div>
   );
 }
