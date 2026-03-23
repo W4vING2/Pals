@@ -427,6 +427,31 @@ export function useMessages() {
     return data.publicUrl;
   }, [user]);
 
+  const deleteConversation = useCallback(
+    async (conversationId: string) => {
+      if (!user) return;
+      const supabase = getSupabaseBrowserClient();
+
+      const { error } = await supabase
+        .from("conversation_participants")
+        .delete()
+        .eq("conversation_id", conversationId)
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.error("Error leaving conversation:", error);
+        return;
+      }
+
+      setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+      if (activeConversationId === conversationId) {
+        setActiveConversationId(null);
+        setMessages([]);
+      }
+    },
+    [user, activeConversationId]
+  );
+
   const getOrCreateConversation = useCallback(
     async (otherUserId: string): Promise<string | null> => {
       if (!user) return null;
@@ -762,5 +787,6 @@ export function useMessages() {
     toggleReaction,
     uploadMessageImage,
     getOrCreateConversation,
+    deleteConversation,
   };
 }

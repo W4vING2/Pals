@@ -164,6 +164,7 @@ export function GroupSettings({
 
   const leaveGroup = async () => {
     if (!user) return;
+    onClose();
     const supabase = getSupabaseBrowserClient();
     const myProfile = conversation.participants.find(p => p.user_id === user.id)?.profiles;
     const myName = myProfile?.display_name ?? myProfile?.username ?? "Пользователь";
@@ -179,7 +180,6 @@ export function GroupSettings({
       .eq("conversation_id", conversation.id)
       .eq("user_id", user.id);
     onUpdated();
-    onClose();
   };
 
   return (

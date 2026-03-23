@@ -12,6 +12,7 @@ interface FeedListProps {
   hasMore: boolean;
   onLoadMore: () => void;
   likedPostIds?: Set<string>;
+  onDeletePost?: (postId: string) => void;
 }
 
 function PostSkeleton() {
@@ -42,7 +43,7 @@ function PostSkeleton() {
   );
 }
 
-export function FeedList({ posts, loading, hasMore, onLoadMore, likedPostIds }: FeedListProps) {
+export function FeedList({ posts, loading, hasMore, onLoadMore, likedPostIds, onDeletePost }: FeedListProps) {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const handleObserver = useCallback(
@@ -87,6 +88,7 @@ export function FeedList({ posts, loading, hasMore, onLoadMore, likedPostIds }: 
           post={post}
           initialLiked={likedPostIds?.has(post.id)}
           priority={idx === 0 && !!post.image_url}
+          onDelete={onDeletePost}
         />
       ))}
 

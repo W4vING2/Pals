@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, MessageSquare, Users } from "lucide-react";
+import { Search, MessageSquare, Users, Trash2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { OnlineIndicator } from "@/components/shared/OnlineIndicator";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ interface ConversationListProps {
   loading: boolean;
   onSelect: (id: string) => void;
   onCreateGroup?: () => void;
+  onDeleteConversation?: (convId: string) => void;
 }
 
 function timeAgo(dateStr: string | null): string {
@@ -47,6 +48,7 @@ export function ConversationList({
   loading,
   onSelect,
   onCreateGroup,
+  onDeleteConversation,
 }: ConversationListProps) {
   const { user } = useAuthStore();
   const [search, setSearch] = useState("");
@@ -133,18 +135,22 @@ export function ConversationList({
               : false;
 
             return (
-              <motion.button
+              <motion.div
                 key={conv.id}
-                onClick={() => onSelect(conv.id)}
                 whileTap={{ scale: 0.98 }}
                 className={cn(
-                  "w-full flex items-center gap-3 p-4 transition-all duration-150 text-left",
+                  "w-full flex items-center gap-3 p-4 transition-all duration-150 text-left group/conv relative",
                   "hover:bg-[var(--bg-elevated)]",
                   isActive &&
                     "bg-[var(--bg-elevated)] border-l-2 border-l-[var(--accent-blue)]"
                 )}
               >
-                <div className="relative shrink-0">
+              <button
+                onClick={() => onSelect(conv.id)}
+                className="absolute inset-0 z-0"
+                aria-label={name}
+              />
+                <div className="relative shrink-0 z-10 pointer-events-none">
                   {avatarUrl ? (
                     <img
                       src={avatarUrl}
@@ -172,7 +178,7 @@ export function ConversationList({
                     />
                   )}
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 relative z-10 pointer-events-none">
                   <div className="flex items-center justify-between gap-2">
                     <p
                       className={cn(
@@ -213,7 +219,21 @@ export function ConversationList({
                     </AnimatePresence>
                   </div>
                 </div>
-              </motion.button>
+                {onDeleteConversation && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm("Удалить чат?")) {
+                        onDeleteConversation(conv.id);
+                      }
+                    }}
+                    className="relative z-10 opacity-0 group-hover/conv:opacity-100 p-1.5 rounded-lg text-red-500 hover:bg-red-500/10 transition-all shrink-0"
+                    title="Удалить"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </motion.div>
             );
           })
         )}

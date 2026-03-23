@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, Share2, Send, Loader2 } from "lucide-react";
+import { MessageCircle, Share2, Send, Loader2, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
 import { LikeButton } from "@/components/shared/LikeButton";
@@ -20,6 +20,7 @@ interface PostCardProps {
   initialLiked?: boolean;
   /** Mark as LCP candidate — loads image eagerly with priority */
   priority?: boolean;
+  onDelete?: (postId: string) => void;
 }
 
 function timeAgo(dateStr: string): string {
@@ -44,11 +45,12 @@ function getInitials(name: string): string {
     .toUpperCase();
 }
 
-export const PostCard = memo(function PostCard({ post, initialLiked, priority }: PostCardProps) {
+export const PostCard = memo(function PostCard({ post, initialLiked, priority, onDelete }: PostCardProps) {
   const { user } = useAuthStore();
   const router = useRouter();
   const [liked, setLiked] = useState(initialLiked ?? false);
   const [likeCount, setLikeCount] = useState(post.likes_count ?? 0);
+  const [deleting, setDeleting] = useState(false);
 
   // Load like status from DB when initialLiked isn't provided
   useEffect(() => {
@@ -69,7 +71,7 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority }:
   }, [initialLiked]);
   const [likePending, setLikePending] = useState(false);
   const [showComments, setShowComments] = useState(false);
-  const [comments, setComments] = useState<Array<{id: string; content: string; created_at: string; profiles?: {username: string; display_name: string | null; avatar_url: string | null}}>>([]);
+  const [comments, setComments] = useState<Array<{id: string; content: string; created_at: string; user_id?: string; profiles?: {username: string; display_name: string | null; avatar_url: string | null}}>>([]);
   const [commentText, setCommentText] = useState("");
   const [commentLoading, setCommentLoading] = useState(false);
   const [commentCount, setCommentCount] = useState(post.comments_count ?? 0);
@@ -111,7 +113,7 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority }:
     const supabase = getSupabaseBrowserClient();
     const { data } = await supabase
       .from("comments")
-      .select("id, content, created_at, profiles:user_id (username, display_name, avatar_url)")
+      .select("id, content, created_at, user_id, profiles:user_id (username, display_name, avatar_url)")
       .eq("post_id", post.id)
       .order("created_at", { ascending: true });
     if (data) setComments(data as typeof comments);
@@ -138,6 +140,15 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority }:
     setCommentLoading(false);
   }, [user, commentText, post.id, loadComments]);
 
+  const handleDeleteComment = useCallback(async (commentId: string) => {
+    if (!user) return;
+    if (!window.confirm("Удалить комментарий?")) return;
+    const supabase = getSupabaseBrowserClient();
+    await supabase.from("comments").delete().eq("id", commentId);
+    setComments((prev) => prev.filter((c) => c.id !== commentId));
+    setCommentCount((c) => Math.max(0, c - 1));
+  }, [user]);
+
   const handleShare = useCallback(async () => {
     const postUrl = `${window.location.origin}/post/${post.id}`;
     if (navigator.share) {
@@ -150,6 +161,16 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority }:
       await navigator.clipboard.writeText(postUrl);
     }
   }, [name, post.content, post.id]);
+
+  const handleDelete = useCallback(async () => {
+    if (!user || deleting) return;
+    if (!window.confirm("Удалить пост?")) return;
+    setDeleting(true);
+    const supabase = getSupabaseBrowserClient();
+    await supabase.from("posts").delete().eq("id", post.id);
+    onDelete?.(post.id);
+    setDeleting(false);
+  }, [user, deleting, post.id, onDelete]);
 
   const navigateToPost = useCallback(() => {
     router.push(`/post/${post.id}`);
@@ -184,6 +205,16 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority }:
                 <span className="text-xs text-[var(--text-secondary)]">
                   {timeAgo(post.created_at)}
                 </span>
+                {user && post.user_id === user.id && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+                    disabled={deleting}
+                    className="ml-auto p-1 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors active:scale-95"
+                    title="Удалить"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               {profile?.username && (
                 <p className="text-xs text-[var(--text-secondary)]">@{profile.username}</p>
@@ -277,7 +308,7 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority }:
                   {comments.length > 0 && (
                     <div className="space-y-2.5 max-h-60 overflow-y-auto">
                       {comments.map((c) => (
-                        <div key={c.id} className="flex gap-2">
+                        <div key={c.id} className="flex gap-2 group/comment">
                           <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
                             {(c.profiles?.display_name ?? c.profiles?.username ?? "?")[0]?.toUpperCase()}
                           </div>
@@ -289,6 +320,15 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority }:
                               <span className="text-[10px] text-[var(--text-secondary)]">
                                 {timeAgo(c.created_at)}
                               </span>
+                              {user && c.user_id === user.id && (
+                                <button
+                                  onClick={() => handleDeleteComment(c.id)}
+                                  className="opacity-0 group-hover/comment:opacity-100 ml-auto p-0.5 rounded text-red-500 hover:bg-red-500/10 transition-all"
+                                  title="Удалить"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
                             </div>
                             <p className="text-xs text-[var(--text-primary)] leading-relaxed">{c.content}</p>
                           </div>

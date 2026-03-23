@@ -257,6 +257,7 @@ export default function FeedPage() {
           hasMore={hasMore}
           onLoadMore={() => loadPosts(false)}
           likedPostIds={likedPostIds}
+          onDeletePost={(postId) => setPosts((prev) => prev.filter((p) => p.id !== postId))}
         />
 
         {/* Mobile FAB */}

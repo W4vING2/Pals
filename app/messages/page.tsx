@@ -31,6 +31,7 @@ export default function MessagesPage() {
     toggleReaction,
     retryMessage,
     uploadMessageImage,
+    deleteConversation,
   } = useMessages();
   const { initiateCall } = useCalls();
 
@@ -129,6 +130,7 @@ export default function MessagesPage() {
               loading={loadingConversations}
               onSelect={handleSelectConversation}
               onCreateGroup={() => setCreateGroupOpen(true)}
+              onDeleteConversation={deleteConversation}
             />
           </div>
         </div>
@@ -211,7 +213,15 @@ export default function MessagesPage() {
           open={groupSettingsOpen}
           onClose={() => setGroupSettingsOpen(false)}
           conversation={activeConv}
-          onUpdated={() => loadConversations()}
+          onUpdated={() => {
+            loadConversations().then(() => {
+              // If user left the group, activeConv will be gone — go back to list
+              const still = conversations.find((c) => c.id === activeConversationId);
+              if (!still) {
+                setMobileView("list");
+              }
+            });
+          }}
         />
       )}
     </PageTransition>

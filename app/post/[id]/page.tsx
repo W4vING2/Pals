@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback, use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Send, Loader2 } from "lucide-react";
+import { ArrowLeft, Send, Loader2, Trash2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { PostCard } from "@/components/feed/PostCard";
@@ -51,6 +51,24 @@ export default function PostPage({ params }: PostPageProps) {
   const [loadingComments, setLoadingComments] = useState(true);
   const [commentText, setCommentText] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [deletingPost, setDeletingPost] = useState(false);
+
+  const handleDeletePost = useCallback(async () => {
+    if (!user || deletingPost || !id) return;
+    if (!window.confirm("Удалить пост?")) return;
+    setDeletingPost(true);
+    const supabase = getSupabaseBrowserClient();
+    await supabase.from("posts").delete().eq("id", id);
+    router.back();
+  }, [user, deletingPost, id, router]);
+
+  const handleDeleteComment = useCallback(async (commentId: string) => {
+    if (!user) return;
+    if (!window.confirm("Удалить комментарий?")) return;
+    const supabase = getSupabaseBrowserClient();
+    await supabase.from("comments").delete().eq("id", commentId);
+    setComments((prev) => prev.filter((c) => c.id !== commentId));
+  }, [user]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -184,7 +202,7 @@ export default function PostPage({ params }: PostPageProps) {
         </button>
 
         {/* Post */}
-        <PostCard post={post} initialLiked={liked} />
+        <PostCard post={post} initialLiked={liked} onDelete={() => handleDeletePost()} />
 
         {/* Comments section */}
         <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl overflow-hidden">
@@ -214,7 +232,7 @@ export default function PostPage({ params }: PostPageProps) {
               </p>
             ) : (
               comments.map((c) => (
-                <div key={c.id} className="flex gap-3 p-4">
+                <div key={c.id} className="flex gap-3 p-4 group/comment">
                   <Avatar className="size-8 shrink-0">
                     {c.profiles?.avatar_url ? (
                       <AvatarImage src={c.profiles.avatar_url} />
@@ -228,13 +246,22 @@ export default function PostPage({ params }: PostPageProps) {
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline gap-2">
+                    <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold text-[var(--text-primary)]">
                         {c.profiles?.display_name ?? c.profiles?.username}
                       </span>
                       <span className="text-[10px] text-[var(--text-secondary)]">
                         {timeAgo(c.created_at)}
                       </span>
+                      {user && c.user_id === user.id && (
+                        <button
+                          onClick={() => handleDeleteComment(c.id)}
+                          className="opacity-0 group-hover/comment:opacity-100 ml-auto p-1 rounded-lg text-red-500 hover:bg-red-500/10 transition-all"
+                          title="Удалить"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                     <p className="text-sm text-[var(--text-primary)] leading-relaxed mt-0.5">
                       {c.content}
