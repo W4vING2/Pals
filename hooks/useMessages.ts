@@ -201,6 +201,7 @@ export function useMessages() {
         sender_id: user.id,
         content: content || null,
         image_url: imageUrl ?? null,
+        message_type: "text",
         is_read: false,
         is_edited: false,
         created_at: new Date().toISOString(),

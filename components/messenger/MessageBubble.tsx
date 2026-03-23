@@ -40,6 +40,16 @@ export const MessageBubble = memo(function MessageBubble({
   onToggleReaction,
   onRetry,
 }: MessageBubbleProps) {
+  if (message.message_type === "system") {
+    return (
+      <div className="flex justify-center my-2">
+        <span className="text-xs text-[var(--text-secondary)] bg-[var(--bg-elevated)] px-3 py-1 rounded-full">
+          {message.content}
+        </span>
+      </div>
+    );
+  }
+
   const profile = message.profiles;
   const { user } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -181,6 +191,7 @@ export const MessageBubble = memo(function MessageBubble({
                 height={280}
                 className="w-full h-auto object-cover rounded-xl"
                 sizes="280px"
+                style={{ width: "auto", height: "auto" }}
               />
             </div>
             <ImageLightbox

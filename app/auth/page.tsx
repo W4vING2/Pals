@@ -105,11 +105,17 @@ export default function AuthPage() {
     setRegLoading(false);
   };
 
+  const isCapacitor = typeof window !== 'undefined' && !!(window as any).Capacitor;
+
   const handleGoogle = async () => {
     const supabase = getSupabaseBrowserClient();
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        redirectTo: isCapacitor
+          ? 'https://pals-rho.vercel.app/auth/callback'
+          : `${window.location.origin}/auth/callback`,
+      },
     });
   };
 

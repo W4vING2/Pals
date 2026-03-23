@@ -184,6 +184,7 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
                 width={600}
                 height={400}
                 className="w-full object-cover max-h-64"
+                style={{ width: "auto", height: "auto" }}
               />
               <button
                 onClick={removeImage}

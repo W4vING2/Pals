@@ -126,11 +126,19 @@ export function GroupSettings({
   const removeMember = async (userId: string) => {
     setRemoving(userId);
     const supabase = getSupabaseBrowserClient();
+    const removedProfile = conversation.participants.find(p => p.user_id === userId)?.profiles;
+    const removedName = removedProfile?.display_name ?? removedProfile?.username ?? "Пользователь";
     await supabase
       .from("conversation_participants")
       .delete()
       .eq("conversation_id", conversation.id)
       .eq("user_id", userId);
+    await supabase.from("messages").insert({
+      conversation_id: conversation.id,
+      sender_id: user!.id,
+      content: `${removedName} удалён(а) из группы`,
+      message_type: "system",
+    });
     setRemoving(null);
     onUpdated();
   };
@@ -143,6 +151,12 @@ export function GroupSettings({
       user_id: profile.id,
       unread_count: 0,
     });
+    await supabase.from("messages").insert({
+      conversation_id: conversation.id,
+      sender_id: user!.id,
+      content: `${profile.display_name ?? profile.username} добавлен(а) в группу`,
+      message_type: "system",
+    });
     setAdding(null);
     setResults((prev) => prev.filter((p) => p.id !== profile.id));
     onUpdated();
@@ -151,6 +165,14 @@ export function GroupSettings({
   const leaveGroup = async () => {
     if (!user) return;
     const supabase = getSupabaseBrowserClient();
+    const myProfile = conversation.participants.find(p => p.user_id === user.id)?.profiles;
+    const myName = myProfile?.display_name ?? myProfile?.username ?? "Пользователь";
+    await supabase.from("messages").insert({
+      conversation_id: conversation.id,
+      sender_id: user.id,
+      content: `${myName} покинул(а) группу`,
+      message_type: "system",
+    });
     await supabase
       .from("conversation_participants")
       .delete()
@@ -165,10 +187,10 @@ export function GroupSettings({
       <DialogContent className="sm:max-w-md bg-[var(--bg-surface)] border-[var(--border)] p-0 gap-0">
         <DialogHeader className="px-4 pt-4 pb-3">
           <DialogTitle className="text-[var(--text-primary)]">
-            Group settings
+            Настройки группы
           </DialogTitle>
           <DialogDescription className="text-[var(--text-secondary)]">
-            {conversation.participants.length} members
+            {conversation.participants.length} участн.
           </DialogDescription>
         </DialogHeader>
 
@@ -211,7 +233,7 @@ export function GroupSettings({
                 disabled={saving || !groupName.trim()}
                 className="rounded-xl shrink-0"
               >
-                {saving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
+                {saving ? <Loader2 className="size-3.5 animate-spin" /> : "Сохранить"}
               </Button>
             </div>
           ) : (
@@ -232,7 +254,7 @@ export function GroupSettings({
                 : "text-[var(--text-secondary)]"
             )}
           >
-            Members
+            Участники
           </button>
           {isAdmin && (
             <button
@@ -244,7 +266,7 @@ export function GroupSettings({
                   : "text-[var(--text-secondary)]"
               )}
             >
-              Add members
+              Добавить
             </button>
           )}
         </div>
@@ -293,7 +315,7 @@ export function GroupSettings({
                         onClick={() => removeMember(p.user_id)}
                         disabled={removing === p.user_id}
                         className="text-red-400 hover:text-red-300 transition-colors p-1.5"
-                        title="Remove member"
+                        title="Удалить участника"
                       >
                         {removing === p.user_id ? (
                           <Loader2 className="size-4 animate-spin" />
@@ -314,7 +336,7 @@ export function GroupSettings({
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search users to add..."
+                    placeholder="Поиск пользователей..."
                     autoFocus
                     className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-full pl-9 pr-4 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none input-focus transition-colors"
                   />
@@ -327,7 +349,7 @@ export function GroupSettings({
                   </div>
                 ) : results.length === 0 && search ? (
                   <p className="text-center text-sm text-[var(--text-secondary)] py-8">
-                    No users found
+                    Пользователи не найдены
                   </p>
                 ) : (
                   results.map((profile) => (
@@ -375,7 +397,7 @@ export function GroupSettings({
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium text-red-400 hover:bg-red-400/10 transition-colors"
           >
             <LogOut className="size-4" />
-            Leave group
+            Покинуть группу
           </button>
         </div>
       </DialogContent>

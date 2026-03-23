@@ -103,6 +103,7 @@ export type Message = {
   sender_id: string;
   content: string | null;
   image_url: string | null;
+  message_type: "text" | "system";
   is_read: boolean;
   is_edited: boolean;
   created_at: string;
@@ -182,7 +183,7 @@ export type Database = {
       >;
       messages: TableDef<
         Message,
-        { conversation_id: string; sender_id: string; content?: string | null; image_url?: string | null },
+        { conversation_id: string; sender_id: string; content?: string | null; image_url?: string | null; message_type?: "text" | "system" },
         Partial<{ content: string | null; image_url: string | null; is_read: boolean }>
       >;
       notifications: TableDef<

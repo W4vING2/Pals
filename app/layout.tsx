@@ -20,6 +20,10 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "Pals",
   },
+  icons: {
+    icon: "/icon-192.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
