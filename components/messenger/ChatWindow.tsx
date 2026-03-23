@@ -15,6 +15,7 @@ import {
   Loader2,
   X,
   Mic,
+  Lock,
 } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import { VoiceRecorder } from "./VoiceRecorder";
@@ -288,8 +289,9 @@ export function ChatWindow({
             )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm text-[var(--text-primary)] truncate">
+            <p className="font-semibold text-sm text-[var(--text-primary)] truncate flex items-center gap-1">
               {chatName}
+              {!isGroup && <Lock className="size-3 text-emerald-500 shrink-0" />}
             </p>
             {isGroup ? (
               <p className="text-xs text-[var(--text-secondary)]">

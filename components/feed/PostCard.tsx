@@ -91,17 +91,28 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority, o
     const supabase = getSupabaseBrowserClient();
 
     if (liked) {
+      // Optimistic
+      setLiked(false);
+      setLikeCount((c) => Math.max(0, c - 1));
       await supabase
         .from("likes")
         .delete()
         .eq("post_id", post.id)
         .eq("user_id", user.id);
-      setLiked(false);
-      setLikeCount((c) => Math.max(0, c - 1));
     } else {
-      await supabase.from("likes").insert({ post_id: post.id, user_id: user.id });
+      // Optimistic
       setLiked(true);
       setLikeCount((c) => c + 1);
+      // Upsert to avoid duplicate key error on rapid toggle
+      const { error } = await supabase.from("likes").upsert(
+        { post_id: post.id, user_id: user.id },
+        { onConflict: "user_id,post_id", ignoreDuplicates: true }
+      );
+      if (error) {
+        // Revert on error
+        setLiked(false);
+        setLikeCount((c) => Math.max(0, c - 1));
+      }
     }
     setLikePending(false);
   }, [user, liked, likePending, post.id]);

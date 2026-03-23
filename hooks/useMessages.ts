@@ -2,9 +2,16 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
-import type { Conversation, Message, MessageReaction, ConversationParticipant, ProfileSummary } from "@/lib/supabase";
+import type { Conversation, Message, MessageReaction, ConversationParticipant, ProfileSummary, Profile } from "@/lib/supabase";
 import { useAuthStore, useUnreadMessagesStore } from "@/lib/store";
 import { sendPushNotification } from "@/lib/sendPushNotification";
+import {
+  getOrCreateKeyPair,
+  getConversationKey,
+  encryptMessage,
+  decryptMessage,
+  isEncrypted,
+} from "@/lib/crypto";
 
 export type ParticipantWithProfile = ConversationParticipant & { profiles: ProfileSummary };
 
@@ -28,6 +35,73 @@ export function useMessages() {
   const activeConvIdRef = useRef(activeConversationId);
   activeConvIdRef.current = activeConversationId;
   const hasLoadedConvsRef = useRef(false);
+
+  // ── E2E encryption setup ─────────────────────────────────
+  const encKeyRef = useRef<CryptoKey | null>(null);
+  const keysInitRef = useRef(false);
+
+  // Initialize user's ECDH keys on first load
+  useEffect(() => {
+    if (!user || keysInitRef.current) return;
+    keysInitRef.current = true;
+    (async () => {
+      try {
+        const { publicKeyJwk, isNew } = await getOrCreateKeyPair(user.id);
+        if (isNew) {
+          // Upload public key to profiles
+          const supabase = getSupabaseBrowserClient();
+          await supabase.from("profiles").update({ public_key: publicKeyJwk }).eq("id", user.id);
+        }
+      } catch (err) {
+        console.warn("E2E key init failed:", err);
+      }
+    })();
+  }, [user]);
+
+  // Get encryption key for a conversation (DM only for now)
+  const getEncKey = useCallback(async (conversationId: string): Promise<CryptoKey | null> => {
+    if (!user) return null;
+    try {
+      // Find the conversation to get the other participant's public key
+      const conv = conversations.find((c) => c.id === conversationId);
+      if (!conv || conv.is_group) return null; // Groups not encrypted for now
+
+      const otherParticipant = conv.participants?.find((p) => p.user_id !== user.id);
+      if (!otherParticipant) return null;
+
+      // Get other user's public key
+      const supabase = getSupabaseBrowserClient();
+      const { data: otherProfile } = await supabase
+        .from("profiles")
+        .select("public_key")
+        .eq("id", otherParticipant.user_id)
+        .single();
+
+      if (!otherProfile?.public_key) return null;
+
+      return await getConversationKey(user.id, otherProfile.public_key, conversationId);
+    } catch {
+      return null;
+    }
+  }, [user, conversations]);
+
+  // Decrypt a batch of messages
+  const decryptMessages = useCallback(async (msgs: Message[], conversationId: string): Promise<Message[]> => {
+    // Check if any messages are encrypted
+    const hasEncrypted = msgs.some((m) => isEncrypted(m.content));
+    if (!hasEncrypted) return msgs;
+
+    const key = await getEncKey(conversationId);
+    if (!key) return msgs; // Can't decrypt, return as-is
+
+    return Promise.all(
+      msgs.map(async (m) => {
+        if (!isEncrypted(m.content)) return m;
+        const decrypted = await decryptMessage(m.content!, key);
+        return { ...m, content: decrypted ?? "🔒 Не удалось расшифровать" };
+      })
+    );
+  }, [getEncKey]);
 
   const refreshBadgeCount = useCallback(async () => {
     if (!user) return;
@@ -163,11 +237,15 @@ export function useMessages() {
           ]);
 
           const profilesMap = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
-          const enriched: Message[] = msgs.map((m) => ({
+          let enriched: Message[] = msgs.map((m) => ({
             ...m,
             profiles: profilesMap.get(m.sender_id) as Message["profiles"],
             reactions: reactionsMap.get(m.id) ?? [],
           }));
+
+          // Decrypt E2E encrypted messages
+          enriched = await decryptMessages(enriched, conversationId);
+
           setMessages(enriched);
         }
       }
@@ -194,7 +272,19 @@ export function useMessages() {
       if (!user) return;
       const supabase = getSupabaseBrowserClient();
 
-      // Optimistic: add message locally with "sending" status
+      // Encrypt text content if possible (DMs only)
+      let encryptedContent = content;
+      const encKey = await getEncKey(conversationId);
+      if (encKey && content) {
+        try {
+          encryptedContent = await encryptMessage(content, encKey);
+        } catch {
+          // Fallback to unencrypted
+          encryptedContent = content;
+        }
+      }
+
+      // Optimistic: add message locally with "sending" status (show original text)
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const optimisticMsg: Message = {
         id: tempId,
@@ -218,7 +308,7 @@ export function useMessages() {
         .insert({
           conversation_id: conversationId,
           sender_id: user.id,
-          content: content || null,
+          content: encryptedContent || null,
           image_url: imageUrl ?? null,
           ...(audioUrl ? { audio_url: audioUrl, message_type: "voice" as const } : {}),
         })
@@ -553,19 +643,27 @@ export function useMessages() {
           filter: `conversation_id=eq.${activeConversationId}`,
         },
         async (payload) => {
-          const msg = payload.new as Message;
+          let msg = payload.new as Message;
+          // Decrypt if encrypted
+          if (isEncrypted(msg.content)) {
+            const key = await getEncKey(activeConversationId);
+            if (key && msg.content) {
+              const decrypted = await decryptMessage(msg.content, key);
+              msg = { ...msg, content: decrypted ?? "🔒 Не удалось расшифровать" };
+            }
+          }
           setMessages((prev) => {
             if (prev.some((m) => m.id === msg.id)) return prev;
             return [...prev, { ...msg, reactions: [] }];
           });
           const { data: profile } = await supabase
             .from("profiles")
-            .select("id, username, display_name, avatar_url, bio, cover_url, location, website, date_of_birth, followers_count, following_count, posts_count, is_online, last_seen, created_at, updated_at")
+            .select("id, username, display_name, avatar_url, bio, cover_url, location, website, date_of_birth, followers_count, following_count, posts_count, is_online, last_seen, public_key, created_at, updated_at")
             .eq("id", msg.sender_id)
             .single();
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === msg.id ? { ...m, profiles: profile ?? undefined } : m
+              m.id === msg.id ? { ...m, profiles: (profile as Profile) ?? undefined } : m
             )
           );
           // If it's from someone else, mark as read immediately (user is viewing chat)

@@ -107,6 +107,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     })();
   }, [user]);
 
+  // Handle deep link for OAuth redirect on Capacitor native
+  useEffect(() => {
+    const isNative = typeof window !== "undefined" && !!(window as any).Capacitor?.isNativePlatform?.();
+    if (!isNative) return;
+
+    let cleanup: (() => void) | undefined;
+    (async () => {
+      try {
+        const { App } = await import("@capacitor/app");
+        const handle = await App.addListener("appUrlOpen", (event: { url: string }) => {
+          try {
+            const url = new URL(event.url);
+            // OAuth callback — extract hash/query with tokens
+            if (url.host === "auth" || url.pathname?.includes("/auth/callback")) {
+              const params = url.hash || url.search;
+              if (params) {
+                // Navigate to callback page with tokens
+                window.location.href = `/auth/callback${params}`;
+              }
+            }
+          } catch { /* ignore malformed URLs */ }
+        });
+        cleanup = () => handle.remove();
+      } catch {
+        // @capacitor/app not available
+      }
+    })();
+
+    return () => cleanup?.();
+  }, []);
+
   const isAuthPage = AUTH_PATHS.some((p) => pathname.startsWith(p));
   const showNav = !isAuthPage && !!user && !loading;
 

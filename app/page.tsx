@@ -207,6 +207,10 @@ export default function FeedPage() {
         const updated = payload.new as Post;
         setPosts((prev) => prev.map((p) => p.id === updated.id ? { ...p, likes_count: updated.likes_count, comments_count: updated.comments_count } : p));
       })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "posts" }, (payload) => {
+        const deleted = payload.old as { id?: string };
+        if (deleted.id) setPosts((prev) => prev.filter((p) => p.id !== deleted.id));
+      })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "comments" }, (payload) => {
         // Only update liked set — count comes from posts UPDATE trigger
         void payload;
@@ -281,8 +285,9 @@ export default function FeedPage() {
         </div>
 
         {/* Tab content */}
+        <AnimatePresence mode="wait">
         {tab === "following" ? (
-          <>
+          <motion.div key="following" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.2 }}>
             {/* New posts banner */}
             <AnimatePresence>
               {newPostCount > 0 && (
@@ -314,9 +319,10 @@ export default function FeedPage() {
               likedPostIds={likedPostIds}
               onDeletePost={(postId) => setPosts((prev) => prev.filter((p) => p.id !== postId))}
             />
-          </>
+          </motion.div>
         ) : (
-          /* Trending tab */
+          <motion.div key="trending" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} transition={{ duration: 0.2 }}>
+          {/* Trending tab */}
           <div className="space-y-6">
             {/* Trending posts */}
             <section>
@@ -420,7 +426,9 @@ export default function FeedPage() {
               )}
             </section>
           </div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
         {/* FAB — create post */}
         <motion.button

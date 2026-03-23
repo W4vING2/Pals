@@ -72,9 +72,8 @@ export function usePresence() {
       if (document.visibilityState === "visible") {
         goOnline();
       } else {
-        // When tab becomes hidden, try to mark offline immediately
-        // In case the tab is closed next, at least we tried
-        handleBeforeUnload();
+        // Mark offline immediately via supabase client (works better on Android)
+        goOffline();
       }
     };
 

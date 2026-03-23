@@ -17,6 +17,7 @@ export type Profile = {
   posts_count: number;
   is_online: boolean;
   last_seen: string | null;
+  public_key: string | null;
   created_at: string;
   updated_at: string;
 };
