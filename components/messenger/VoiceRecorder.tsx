@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Send, X } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -15,33 +15,46 @@ export function VoiceRecorder({ onRecorded, onCancel }: VoiceRecorderProps) {
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Keep latest callback in a ref so mr.onstop always uses the current one
+  const onRecordedRef = useRef(onRecorded);
+  onRecordedRef.current = onRecorded;
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
 
-  const startRecording = async () => {
+  const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4" });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm"
+        : MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4"
+        : "";
+      const mr = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
       chunksRef.current = [];
       mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       mr.onstop = () => {
         stream.getTracks().forEach(t => t.stop());
         const blob = new Blob(chunksRef.current, { type: mr.mimeType });
-        onRecorded(blob);
+        if (blob.size > 0) {
+          onRecordedRef.current(blob);
+        } else {
+          onCancelRef.current();
+        }
       };
-      mr.start();
+      mr.start(250); // collect data every 250ms to avoid empty chunks
       mediaRecorderRef.current = mr;
       setRecording(true);
       setElapsed(0);
       timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
     } catch {
-      onCancel();
+      onCancelRef.current();
     }
-  };
+  }, []);
 
   useEffect(() => {
     startRecording();
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [startRecording]);
 
   const stop = () => {
     if (timerRef.current) clearInterval(timerRef.current);

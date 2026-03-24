@@ -653,7 +653,20 @@ export function useMessages() {
             }
           }
           setMessages((prev) => {
+            // Skip if already exists (by real id)
             if (prev.some((m) => m.id === msg.id)) return prev;
+            // If this is our own message, replace the temp/optimistic one
+            const currentUser = userRef.current;
+            if (msg.sender_id === currentUser?.id) {
+              const hasTempVersion = prev.some((m) => m.id.startsWith("temp-") && m.sender_id === currentUser.id && Math.abs(new Date(m.created_at).getTime() - new Date(msg.created_at).getTime()) < 5000);
+              if (hasTempVersion) {
+                return prev.map((m) =>
+                  m.id.startsWith("temp-") && m.sender_id === currentUser.id && Math.abs(new Date(m.created_at).getTime() - new Date(msg.created_at).getTime()) < 5000
+                    ? { ...msg, reactions: [], _status: "sent" as const }
+                    : m
+                );
+              }
+            }
             return [...prev, { ...msg, reactions: [] }];
           });
           const { data: profile } = await supabase
@@ -695,7 +708,7 @@ export function useMessages() {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === updated.id
-                ? { ...m, content: updated.content, image_url: updated.image_url, is_read: updated.is_read, is_edited: updated.is_edited }
+                ? { ...m, content: updated.content, image_url: updated.image_url, audio_url: updated.audio_url, message_type: updated.message_type, is_read: updated.is_read, is_edited: updated.is_edited }
                 : m
             )
           );

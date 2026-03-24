@@ -321,12 +321,20 @@ export default function SettingsPage() {
                   onClick={async () => {
                     if (!user) return;
                     setPushLoading(true);
-                    if (pushEnabled) {
-                      await unsubscribeFromPush(user.id);
-                      setPushEnabled(false);
-                    } else {
-                      const ok = await subscribeToPush(user.id);
-                      setPushEnabled(ok);
+                    try {
+                      if (pushEnabled) {
+                        await unsubscribeFromPush(user.id);
+                        setPushEnabled(false);
+                      } else {
+                        const ok = await subscribeToPush(user.id);
+                        setPushEnabled(ok);
+                        if (!ok) {
+                          alert("Не удалось включить уведомления. Проверьте разрешения в настройках браузера.");
+                        }
+                      }
+                    } catch (err) {
+                      console.error("Push toggle error:", err);
+                      alert("Ошибка при настройке уведомлений");
                     }
                     setPushLoading(false);
                   }}

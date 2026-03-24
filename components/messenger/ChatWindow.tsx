@@ -477,18 +477,36 @@ export function ChatWindow({
           {voiceMode ? (
             <VoiceRecorder
               onRecorded={async (blob) => {
-                setVoiceMode(false);
-                if (!user) return;
-                const supabase = getSupabaseBrowserClient();
-                const ext = blob.type.includes("webm") ? "webm" : "mp4";
-                const path = `voice/${user.id}/${Date.now()}.${ext}`;
-                const { error } = await supabase.storage.from("media").upload(path, blob, { upsert: false });
-                if (error) {
-                  console.error("Voice upload error:", error);
-                  return;
+                if (!user) { setVoiceMode(false); return; }
+                try {
+                  const supabase = getSupabaseBrowserClient();
+                  const ext = blob.type.includes("webm") ? "webm"
+                    : blob.type.includes("mp4") ? "mp4"
+                    : blob.type.includes("ogg") ? "ogg"
+                    : "webm";
+                  const filePath = `voice/${user.id}/${Date.now()}.${ext}`;
+                  const { error } = await supabase.storage.from("media").upload(filePath, blob, {
+                    upsert: false,
+                    contentType: blob.type || "audio/webm",
+                  });
+                  if (error) {
+                    console.error("Voice upload error:", error);
+                    setUploadError("Не удалось отправить голосовое сообщение");
+                    setVoiceMode(false);
+                    return;
+                  }
+                  const { data } = supabase.storage.from("media").getPublicUrl(filePath);
+                  if (data?.publicUrl) {
+                    await onSend("", undefined, data.publicUrl);
+                  } else {
+                    setUploadError("Не удалось получить ссылку на аудио");
+                  }
+                } catch (err) {
+                  console.error("Voice send failed:", err);
+                  setUploadError("Ошибка отправки голосового сообщения");
+                } finally {
+                  setVoiceMode(false);
                 }
-                const { data } = supabase.storage.from("media").getPublicUrl(path);
-                await onSend("", undefined, data.publicUrl);
               }}
               onCancel={() => setVoiceMode(false)}
             />
@@ -506,7 +524,8 @@ export function ChatWindow({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,image/png,image/jpeg,image/gif,image/webp"
+                capture={false as any}
                 className="hidden"
                 onChange={handleImageUpload}
               />

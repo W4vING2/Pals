@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.waving.pals",
+      "sha256_cert_fingerprints": [
+        "EF:0C:D1:45:93:9A:D2:0F:31:6B:FC:2F:AB:FB:34:6B:46:E9:6B:23:05:44:D3:46:FB:40:8F:F0:FB:30:A8:DB"
+      ]
+    }
+  }
+]

@@ -22,6 +22,17 @@ let cachedAuth: GoogleAuth | null = null;
 
 function getGoogleAuth(): GoogleAuth {
   if (cachedAuth) return cachedAuth;
+
+  // Try env variable first (Vercel), then file (local)
+  const credentialsJson = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (credentialsJson) {
+    try {
+      const credentials = JSON.parse(credentialsJson);
+      cachedAuth = new GoogleAuth({ credentials, scopes: [FCM_SCOPE] });
+      return cachedAuth;
+    } catch { /* fall through to file */ }
+  }
+
   cachedAuth = new GoogleAuth({
     keyFile: path.join(process.cwd(), "firebase-service-account.json"),
     scopes: [FCM_SCOPE],

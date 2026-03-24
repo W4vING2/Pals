@@ -105,19 +105,49 @@ export default function AuthPage() {
     setRegLoading(false);
   };
 
+  const [googleLoading, setGoogleLoading] = useState(false);
+
   const handleGoogle = async () => {
     const isNative = typeof window !== "undefined" && !!(window as any).Capacitor?.isNativePlatform?.();
-    const redirectTo = isNative
-      ? "com.waving.pals://auth/callback"
-      : `${window.location.origin}/auth/callback`;
-
     const supabase = getSupabaseBrowserClient();
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo,
-      },
-    });
+
+    if (isNative) {
+      setGoogleLoading(true);
+      try {
+        // Use custom scheme redirect so Capacitor intercepts it
+        const redirectTo = "com.waving.pals://auth/callback";
+        const { data } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo,
+            skipBrowserRedirect: true,
+          },
+        });
+
+        if (data?.url) {
+          const { Browser } = await import("@capacitor/browser");
+
+          // Open in in-app browser (Custom Tabs on Android)
+          // The AppShell deep link handler will intercept the redirect,
+          // close the browser, and navigate to /auth/callback
+          await Browser.open({ url: data.url });
+
+          // If user closes browser without completing, reset loading
+          Browser.addListener("browserFinished", () => {
+            setGoogleLoading(false);
+          });
+        }
+      } catch (err) {
+        console.error("Google OAuth error:", err);
+        setGoogleLoading(false);
+      }
+    } else {
+      const redirectTo = `${window.location.origin}/auth/callback`;
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo },
+      });
+    }
   };
 
   return (

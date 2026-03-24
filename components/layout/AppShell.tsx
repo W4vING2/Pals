@@ -116,15 +116,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const { App } = await import("@capacitor/app");
-        const handle = await App.addListener("appUrlOpen", (event: { url: string }) => {
+        const handle = await App.addListener("appUrlOpen", async (event: { url: string }) => {
           try {
             const url = new URL(event.url);
-            // OAuth callback — extract hash/query with tokens
-            if (url.host === "auth" || url.pathname?.includes("/auth/callback")) {
-              const params = url.hash || url.search;
-              if (params) {
-                // Navigate to callback page with tokens
-                window.location.href = `/auth/callback${params}`;
+            // Detect auth callback from custom scheme (com.waving.pals://auth/callback)
+            // In custom scheme URLs, "auth" becomes the host and "/callback" the pathname
+            const isAuthCallback =
+              url.pathname?.includes("/auth/callback") ||
+              (url.host === "auth" && url.pathname?.includes("/callback"));
+
+            if (isAuthCallback) {
+              // Close the in-app browser
+              try {
+                const { Browser } = await import("@capacitor/browser");
+                await Browser.close();
+              } catch { /* Browser plugin may not be available */ }
+
+              const code = url.searchParams.get("code");
+              if (code) {
+                window.location.href = `/auth/callback?code=${code}`;
+              } else {
+                const params = url.hash || url.search;
+                if (params) {
+                  window.location.href = `/auth/callback${params}`;
+                }
               }
             }
           } catch { /* ignore malformed URLs */ }

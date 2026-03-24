@@ -137,11 +137,26 @@ async function unsubscribeCapacitor(userId: string): Promise<boolean> {
 
 async function subscribeWeb(userId: string): Promise<boolean> {
   try {
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") return false;
+    if (!VAPID_PUBLIC_KEY) {
+      console.error("Push: VAPID_PUBLIC_KEY is not set");
+      return false;
+    }
 
-    if (!("serviceWorker" in navigator)) return false;
-    const registration = await navigator.serviceWorker.register("/sw.js");
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      console.warn("Push: permission denied by user");
+      return false;
+    }
+
+    if (!("serviceWorker" in navigator)) {
+      console.error("Push: serviceWorker not supported");
+      return false;
+    }
+
+    let registration = await navigator.serviceWorker.getRegistration("/sw.js");
+    if (!registration) {
+      registration = await navigator.serviceWorker.register("/sw.js");
+    }
     await navigator.serviceWorker.ready;
 
     let subscription = await registration.pushManager.getSubscription();
@@ -153,7 +168,10 @@ async function subscribeWeb(userId: string): Promise<boolean> {
     }
 
     const sub = subscription.toJSON();
-    if (!sub.endpoint || !sub.keys) return false;
+    if (!sub.endpoint || !sub.keys) {
+      console.error("Push: subscription missing endpoint or keys");
+      return false;
+    }
 
     const supabase = getSupabaseBrowserClient();
     const { error } = await supabase.from("push_subscriptions").upsert(
@@ -167,7 +185,13 @@ async function subscribeWeb(userId: string): Promise<boolean> {
       { onConflict: "user_id,endpoint" }
     );
 
-    return !error;
+    if (error) {
+      console.error("Push: failed to save subscription to DB:", error);
+      return false;
+    }
+
+    console.log("Push: subscribed successfully");
+    return true;
   } catch (err) {
     console.error("Web push subscribe failed:", err);
     return false;
