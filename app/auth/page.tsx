@@ -116,13 +116,27 @@ export default function AuthPage() {
       try {
         // Use custom scheme redirect so Capacitor intercepts it
         const redirectTo = "com.waving.pals://auth/callback";
-        const { data } = await supabase.auth.signInWithOAuth({
+        console.log("[auth] signInWithOAuth start, redirectTo:", redirectTo);
+
+        const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
           provider: "google",
           options: {
             redirectTo,
             skipBrowserRedirect: true,
           },
         });
+
+        console.log("[auth] signInWithOAuth result:", { url: data?.url?.slice(0, 80), error: oauthError?.message });
+
+        // DEBUG: check that code verifier was stored
+        try {
+          const keys: string[] = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.includes("code-verifier")) keys.push(key);
+          }
+          console.log("[auth] code-verifier keys after signIn:", keys);
+        } catch {}
 
         if (data?.url) {
           const { Browser } = await import("@capacitor/browser");

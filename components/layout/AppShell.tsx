@@ -7,6 +7,7 @@ import { X } from "lucide-react";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { MobileNavBar } from "./MobileNavBar";
 import { useAuth } from "@/hooks/useAuth";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { usePresence } from "@/hooks/usePresence";
 import { useRealtimeBadges } from "@/hooks/useRealtimeBadges";
 import { useCallStore, useCreatePostStore } from "@/lib/store";
@@ -112,37 +113,66 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const isNative = typeof window !== "undefined" && !!(window as any).Capacitor?.isNativePlatform?.();
     if (!isNative) return;
 
+    /** Extract auth code/params from a deep-link URL and navigate to the callback page */
+    function handleDeepLink(rawUrl: string) {
+      // DEBUG: store deep link info so callback page can display it
+      try {
+        (window as any).__deepLinkDebug = {
+          rawUrl,
+          timestamp: new Date().toISOString(),
+        };
+        console.log("[deep-link] rawUrl:", rawUrl);
+      } catch {}
+
+      try {
+        const url = new URL(rawUrl);
+        const isAuthCallback =
+          url.pathname?.includes("/auth/callback") ||
+          (url.host === "auth" && url.pathname?.includes("/callback"));
+
+        console.log("[deep-link] parsed:", { protocol: url.protocol, host: url.host, pathname: url.pathname, search: url.search, isAuthCallback });
+
+        if (!isAuthCallback) return;
+
+        // Close the in-app browser (fire-and-forget)
+        import("@capacitor/browser")
+          .then(({ Browser }) => Browser.close())
+          .catch(() => {});
+
+        // Delegate code exchange to the callback page — it already handles PKCE
+        // exchange, error recovery, and session polling in a single place.
+        const code = url.searchParams.get("code");
+        console.log("[deep-link] code:", code ? code.slice(0, 12) + "..." : "NULL");
+
+        if (code) {
+          window.location.href = `/auth/callback?code=${encodeURIComponent(code)}`;
+        } else {
+          // Implicit flow fallback: tokens in hash
+          const params = url.hash || url.search;
+          if (params) {
+            window.location.href = `/auth/callback${params}`;
+          }
+        }
+      } catch (e) {
+        console.error("[deep-link] error:", e);
+      }
+    }
+
     let cleanup: (() => void) | undefined;
     (async () => {
       try {
         const { App } = await import("@capacitor/app");
-        const handle = await App.addListener("appUrlOpen", async (event: { url: string }) => {
-          try {
-            const url = new URL(event.url);
-            // Detect auth callback from custom scheme (com.waving.pals://auth/callback)
-            // In custom scheme URLs, "auth" becomes the host and "/callback" the pathname
-            const isAuthCallback =
-              url.pathname?.includes("/auth/callback") ||
-              (url.host === "auth" && url.pathname?.includes("/callback"));
 
-            if (isAuthCallback) {
-              // Close the in-app browser
-              try {
-                const { Browser } = await import("@capacitor/browser");
-                await Browser.close();
-              } catch { /* Browser plugin may not be available */ }
+        // Cold-start: the app was launched via a deep link before the listener
+        // could be registered. getLaunchUrl() returns the URL that started the app.
+        const launch = await App.getLaunchUrl();
+        if (launch?.url) {
+          handleDeepLink(launch.url);
+        }
 
-              const code = url.searchParams.get("code");
-              if (code) {
-                window.location.href = `/auth/callback?code=${code}`;
-              } else {
-                const params = url.hash || url.search;
-                if (params) {
-                  window.location.href = `/auth/callback${params}`;
-                }
-              }
-            }
-          } catch { /* ignore malformed URLs */ }
+        // Warm-start: the app is already running and receives a deep link
+        const handle = await App.addListener("appUrlOpen", (event: { url: string }) => {
+          handleDeepLink(event.url);
         });
         cleanup = () => handle.remove();
       } catch {

@@ -19,14 +19,42 @@ export function AudioPlayer({ src, isOwn = false }: AudioPlayerProps) {
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    const onLoaded = () => setDuration(audio.duration);
-    const onTime = () => setCurrentTime(audio.currentTime);
+    const setRealDuration = () => {
+      const d = audio.duration;
+      if (d && isFinite(d) && d > 0) {
+        setDuration(d);
+      }
+    };
+    const onLoaded = () => {
+      // WebM files often report Infinity on loadedmetadata
+      if (!isFinite(audio.duration)) {
+        // Seek to a large value to force the browser to resolve the real duration
+        audio.currentTime = 1e10;
+      } else {
+        setRealDuration();
+      }
+    };
+    const onDurationChange = () => {
+      setRealDuration();
+      // Reset currentTime if we forced a seek to resolve duration
+      if (audio.currentTime > 1e9) {
+        audio.currentTime = 0;
+      }
+    };
+    const onTime = () => {
+      // Ignore the seek we use to resolve duration
+      if (audio.currentTime < 1e9) {
+        setCurrentTime(audio.currentTime);
+      }
+    };
     const onEnded = () => { setPlaying(false); setCurrentTime(0); };
     audio.addEventListener("loadedmetadata", onLoaded);
+    audio.addEventListener("durationchange", onDurationChange);
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("ended", onEnded);
     return () => {
       audio.removeEventListener("loadedmetadata", onLoaded);
+      audio.removeEventListener("durationchange", onDurationChange);
       audio.removeEventListener("timeupdate", onTime);
       audio.removeEventListener("ended", onEnded);
     };
