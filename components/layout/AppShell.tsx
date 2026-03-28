@@ -19,29 +19,47 @@ const AUTH_PATHS = ["/auth"];
 
 function SplashScreen({ onFinished }: { onFinished: () => void }) {
   useEffect(() => {
-    // Safety: always dismiss after 3s max
-    const timer = setTimeout(onFinished, 3000);
+    const timer = setTimeout(onFinished, 2800);
     return () => clearTimeout(timer);
   }, [onFinished]);
 
   return (
     <motion.div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-[var(--bg-base)]"
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.35, ease: "easeOut" }}
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-[var(--bg-base)] overflow-hidden"
+      exit={{ opacity: 0, scale: 1.05 }}
+      transition={{ duration: 0.4, ease: "easeInOut" }}
     >
+      {/* Pulsing glow behind logo */}
+      <motion.div
+        className="absolute rounded-full bg-[var(--accent-blue)]/20 blur-3xl"
+        initial={{ width: 0, height: 0, opacity: 0 }}
+        animate={{
+          width: [0, 120, 300, 200],
+          height: [0, 120, 300, 200],
+          opacity: [0, 0.6, 0.3, 0],
+        }}
+        transition={{
+          duration: 2.4,
+          times: [0, 0.25, 0.6, 1],
+          ease: "easeOut",
+        }}
+      />
+      {/* Logo: starts tiny, pulses, then expands dramatically */}
       <motion.img
         src="/logo.png"
         alt="Pals"
-        className="w-28 h-28"
+        className="relative z-10"
+        style={{ width: 112, height: 112 }}
+        initial={{ scale: 0.1, opacity: 0, rotate: -20 }}
         animate={{
-          scale: [0.4, 1.15, 1],
-          opacity: [0, 1, 1],
+          scale: [0.1, 0.5, 0.45, 1.1, 6],
+          opacity: [0, 1, 1, 1, 0],
+          rotate: [-20, 0, 0, 0, 0],
         }}
         transition={{
-          duration: 0.8,
-          times: [0, 0.45, 1],
-          ease: [0.22, 1, 0.36, 1],
+          duration: 2.6,
+          times: [0, 0.2, 0.35, 0.6, 1],
+          ease: [0.16, 1, 0.3, 1],
         }}
       />
     </motion.div>
@@ -102,6 +120,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           const url = notification.notification?.data?.url;
           if (url) window.location.href = url;
         });
+
+        // Re-register if already subscribed (keeps FCM token fresh)
+        const perms = await PushNotifications.checkPermissions();
+        if (perms.receive === "granted") {
+          await PushNotifications.register();
+        }
       } catch {
         // Plugin not available
       }

@@ -3,7 +3,7 @@
 import React, { memo, useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, CheckCheck, Pencil, Trash2, X, CornerDownLeft, AlertCircle, Loader2 } from "lucide-react";
+import { Check, CheckCheck, Pencil, Trash2, X, CornerDownLeft, AlertCircle, Loader2, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ImageLightbox } from "@/components/shared/ImageLightbox";
 import { AudioPlayer } from "./AudioPlayer";
@@ -123,6 +123,25 @@ export const MessageBubble = memo(function MessageBubble({
     onDelete?.(message.id);
   };
 
+  const handleCopy = async () => {
+    setMenuOpen(false);
+    if (message.content) {
+      try {
+        await navigator.clipboard.writeText(message.content);
+      } catch {
+        // Fallback for older browsers / Capacitor
+        const ta = document.createElement("textarea");
+        ta.value = message.content;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+    }
+  };
+
   const handleReaction = (emoji: string) => {
     setMenuOpen(false);
     onToggleReaction?.(message.id, emoji);
@@ -204,10 +223,13 @@ export const MessageBubble = memo(function MessageBubble({
         )}
 
         {message.audio_url && (
-          <div className={cn(
-            "px-3 py-2 rounded-2xl",
-            isOwn ? "bg-[var(--accent-blue)] text-white rounded-br-md" : "bg-[var(--bg-surface)] text-[var(--text-primary)] rounded-bl-md border border-[var(--border)]"
-          )}>
+          <div
+            onClick={handleClick}
+            className={cn(
+              "px-3 py-2 rounded-2xl cursor-pointer active:scale-[0.98] transition-all",
+              isOwn ? "bg-[var(--accent-blue)] text-white rounded-br-md" : "bg-[var(--bg-surface)] text-[var(--text-primary)] rounded-bl-md border border-[var(--border)]"
+            )}
+          >
             <AudioPlayer src={message.audio_url} isOwn={isOwn} />
           </div>
         )}
@@ -342,6 +364,17 @@ export const MessageBubble = memo(function MessageBubble({
                     </button>
                   ))}
                 </div>
+              )}
+
+              {/* Copy */}
+              {message.content && (
+                <button
+                  onClick={handleCopy}
+                  className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors w-full text-left"
+                >
+                  <Copy className="w-4 h-4 text-[var(--text-secondary)]" />
+                  Копировать
+                </button>
               )}
 
               {/* Edit/Delete (own messages only) */}

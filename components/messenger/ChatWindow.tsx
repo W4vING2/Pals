@@ -26,6 +26,49 @@ import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
+function isCapacitorNative(): boolean {
+  return typeof window !== "undefined" && !!(window as any).Capacitor?.isNativePlatform?.();
+}
+
+async function pickImageCapacitor(): Promise<File | null> {
+  try {
+    const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+
+    // Request permissions and show alert if denied
+    const perms = await Camera.requestPermissions({ permissions: ["photos", "camera"] });
+    if (perms.photos === "denied" && perms.camera === "denied") {
+      alert("Для прикрепления фото необходимо разрешить доступ к камере или галерее в настройках приложения.");
+      return null;
+    }
+
+    const photo = await Camera.getPhoto({
+      quality: 85,
+      allowEditing: false,
+      resultType: CameraResultType.Uri,
+      source: CameraSource.Prompt, // Shows dialog: Camera or Gallery
+      promptLabelHeader: "Фото",
+      promptLabelPhoto: "Галерея",
+      promptLabelPicture: "Камера",
+    });
+
+    if (!photo.webPath) return null;
+
+    // Fetch the image blob from the webPath
+    const response = await fetch(photo.webPath);
+    const blob = await response.blob();
+    const ext = photo.format || "jpeg";
+    return new File([blob], `photo_${Date.now()}.${ext}`, { type: `image/${ext}` });
+  } catch (err: any) {
+    // User cancelled
+    if (err?.message?.includes("cancelled") || err?.message?.includes("User cancelled")) {
+      return null;
+    }
+    console.error("Capacitor camera error:", err);
+    alert("Не удалось получить фото. Проверьте разрешения в настройках.");
+    return null;
+  }
+}
+
 function formatDateSeparator(dateStr: string): string {
   const date = new Date(dateStr);
   const now = new Date();
@@ -514,7 +557,19 @@ export function ChatWindow({
             <>
               {/* Image upload */}
               <button
-                onClick={() => fileInputRef.current?.click()}
+                onClick={async () => {
+                  if (isCapacitorNative()) {
+                    const file = await pickImageCapacitor();
+                    if (file) {
+                      setUploadError(null);
+                      setPendingFile(file);
+                      setPendingPreview(URL.createObjectURL(file));
+                      setCaption("");
+                    }
+                  } else {
+                    fileInputRef.current?.click();
+                  }
+                }}
                 disabled={uploading}
                 className="text-[var(--text-secondary)] hover:text-[var(--accent-blue)] transition-colors shrink-0 flex items-center justify-center w-8 h-8"
                 aria-label="Загрузить изображение"

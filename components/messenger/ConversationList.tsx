@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, MessageSquare, Users, Trash2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -66,6 +66,32 @@ export function ConversationList({
   }, [conversations, user?.id]);
 
   const onlineMap = useOnlineStatus(otherUserIds);
+
+  // Long-press state for mobile delete
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressConvRef = useRef<string | null>(null);
+
+  const handleTouchStart = useCallback((convId: string) => {
+    longPressConvRef.current = convId;
+    longPressTimerRef.current = setTimeout(() => {
+      if (longPressConvRef.current === convId && onDeleteConversation) {
+        // Trigger haptic feedback if available
+        if (navigator.vibrate) navigator.vibrate(50);
+        if (window.confirm("Удалить чат?")) {
+          onDeleteConversation(convId);
+        }
+      }
+      longPressConvRef.current = null;
+    }, 600);
+  }, [onDeleteConversation]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressConvRef.current = null;
+  }, []);
 
   const filtered = conversations.filter((conv) => {
     if (!search) return true;
@@ -138,6 +164,9 @@ export function ConversationList({
               <motion.div
                 key={conv.id}
                 whileTap={{ scale: 0.98 }}
+                onTouchStart={() => onDeleteConversation && handleTouchStart(conv.id)}
+                onTouchEnd={handleTouchEnd}
+                onTouchCancel={handleTouchEnd}
                 className={cn(
                   "w-full flex items-center gap-3 p-4 transition-all duration-150 text-left group/conv relative",
                   "hover:bg-[var(--bg-elevated)]",

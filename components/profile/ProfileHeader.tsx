@@ -29,6 +29,7 @@ import {
   Loader2,
   MoreHorizontal,
   Ban,
+  Settings,
 } from "lucide-react";
 import { useBlockedUsers } from "@/hooks/useBlockedUsers";
 import { cn } from "@/lib/utils";
@@ -378,14 +379,23 @@ export function ProfileHeader({
         <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[var(--bg-base)] to-transparent" />
 
         {isOwnProfile && (
-          <button
-            onClick={() => coverInputRef.current?.click()}
-            disabled={uploadingCover}
-            className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-xl text-xs font-medium text-white hover:bg-black/60 transition-all duration-150"
-          >
-            <Camera className="size-3.5" />
-            {uploadingCover ? "Загрузка..." : "Обложка"}
-          </button>
+          <>
+            <button
+              onClick={() => router.push("/settings")}
+              className="absolute top-3 right-3 z-10 size-9 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/60 transition-all duration-150"
+              aria-label="Настройки"
+            >
+              <Settings className="size-4.5" />
+            </button>
+            <button
+              onClick={() => coverInputRef.current?.click()}
+              disabled={uploadingCover}
+              className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-xl text-xs font-medium text-white hover:bg-black/60 transition-all duration-150"
+            >
+              <Camera className="size-3.5" />
+              {uploadingCover ? "Загрузка..." : "Обложка"}
+            </button>
+          </>
         )}
         <input
           ref={coverInputRef}
