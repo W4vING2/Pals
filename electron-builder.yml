@@ -1,0 +1,45 @@
+appId: com.waving.pals
+productName: Pals
+copyright: Copyright © 2025 Pals
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist-electron/**/*
+  - public/icon-192.png
+  - public/icon-512.png
+  - public/logo.png
+
+mac:
+  category: public.app-category.social-networking
+  icon: public/icon-512.png
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+  darkModeSupport: true
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+dmg:
+  title: Pals
+  iconSize: 80
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+protocols:
+  - name: Pals
+    schemes:
+      - pals

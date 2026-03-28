@@ -127,9 +127,21 @@ type UnreadMessagesState = {
 
 export const useUnreadMessagesStore = create<UnreadMessagesState>((set) => ({
   unreadMessagesCount: 0,
-  setUnreadMessagesCount: (n) => set({ unreadMessagesCount: n }),
+  setUnreadMessagesCount: (n) => {
+    set({ unreadMessagesCount: n });
+    // Update macOS dock badge if running in Electron
+    if (typeof window !== "undefined" && window.palsDesktop?.setBadge) {
+      window.palsDesktop.setBadge(n);
+    }
+  },
   incrementUnreadMessages: () =>
-    set((s) => ({ unreadMessagesCount: s.unreadMessagesCount + 1 })),
+    set((s) => {
+      const next = s.unreadMessagesCount + 1;
+      if (typeof window !== "undefined" && window.palsDesktop?.setBadge) {
+        window.palsDesktop.setBadge(next);
+      }
+      return { unreadMessagesCount: next };
+    }),
 }));
 
 // ── Notification Store ─────────────────────────────────────

@@ -139,22 +139,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     /** Extract auth code/params from a deep-link URL and navigate to the callback page */
     function handleDeepLink(rawUrl: string) {
-      // DEBUG: store deep link info so callback page can display it
-      try {
-        (window as any).__deepLinkDebug = {
-          rawUrl,
-          timestamp: new Date().toISOString(),
-        };
-        console.log("[deep-link] rawUrl:", rawUrl);
-      } catch {}
-
       try {
         const url = new URL(rawUrl);
         const isAuthCallback =
           url.pathname?.includes("/auth/callback") ||
           (url.host === "auth" && url.pathname?.includes("/callback"));
-
-        console.log("[deep-link] parsed:", { protocol: url.protocol, host: url.host, pathname: url.pathname, search: url.search, isAuthCallback });
 
         if (!isAuthCallback) return;
 
@@ -163,10 +152,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           .then(({ Browser }) => Browser.close())
           .catch(() => {});
 
-        // Delegate code exchange to the callback page — it already handles PKCE
-        // exchange, error recovery, and session polling in a single place.
         const code = url.searchParams.get("code");
-        console.log("[deep-link] code:", code ? code.slice(0, 12) + "..." : "NULL");
 
         if (code) {
           window.location.href = `/auth/callback?code=${encodeURIComponent(code)}`;
@@ -177,8 +163,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             window.location.href = `/auth/callback${params}`;
           }
         }
-      } catch (e) {
-        console.error("[deep-link] error:", e);
+      } catch {
+        // Invalid URL
       }
     }
 

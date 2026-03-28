@@ -23,6 +23,18 @@ export function VoiceRecorder({ onRecorded, onCancel }: VoiceRecorderProps) {
 
   const startRecording = useCallback(async () => {
     try {
+      // Check permission status first (where supported)
+      if (navigator.permissions) {
+        try {
+          const permStatus = await navigator.permissions.query({ name: "microphone" as PermissionName });
+          if (permStatus.state === "denied") {
+            alert("Доступ к микрофону запрещён. Разрешите доступ в настройках браузера или приложения.");
+            onCancelRef.current();
+            return;
+          }
+        } catch { /* permissions API may not support microphone query */ }
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm"
         : MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4"
@@ -46,7 +58,13 @@ export function VoiceRecorder({ onRecorded, onCancel }: VoiceRecorderProps) {
       setRecording(true);
       setElapsed(0);
       timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-    } catch {
+    } catch (err: any) {
+      // Show user-friendly error for permission denied
+      if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+        alert("Для записи голосового сообщения необходимо разрешить доступ к микрофону.");
+      } else {
+        alert("Не удалось начать запись. Проверьте доступ к микрофону.");
+      }
       onCancelRef.current();
     }
   }, []);

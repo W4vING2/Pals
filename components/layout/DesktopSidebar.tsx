@@ -4,7 +4,7 @@ import React from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Home, Search, PlusCircle, MessageCircle, User, Bell, Compass } from "lucide-react";
+import { Home, Search, MessageCircle, User, Bell } from "lucide-react";
 import { useAuthStore, useNotificationStore, useUnreadMessagesStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -18,8 +18,6 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { href: "/", icon: Home, label: "Главная" },
   { href: "/search", icon: Search, label: "Поиск" },
-  { href: "/explore", icon: Compass, label: "Обзор" },
-  { href: "/create", icon: PlusCircle, label: "Создать" },
   { href: "/messages", icon: MessageCircle, label: "Сообщения" },
   { href: "/notifications", icon: Bell, label: "Уведомления" },
   { href: "/profile", icon: User, label: "Профиль", isDynamic: true },

@@ -109,16 +109,16 @@ export default function AuthPage() {
 
   const handleGoogle = async () => {
     const isNative = typeof window !== "undefined" && !!(window as any).Capacitor?.isNativePlatform?.();
+    const isElectron = typeof window !== "undefined" && !!(window as any).palsDesktop?.isDesktop;
     const supabase = getSupabaseBrowserClient();
 
-    if (isNative) {
+    if (isElectron) {
+      // Electron: open Google OAuth in system browser, redirect back via pals:// protocol
       setGoogleLoading(true);
       try {
-        // Use custom scheme redirect so Capacitor intercepts it
-        const redirectTo = "com.waving.pals://auth/callback";
-        console.log("[auth] signInWithOAuth start, redirectTo:", redirectTo);
+        const redirectTo = "pals://auth/callback";
 
-        const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+        const { data } = await supabase.auth.signInWithOAuth({
           provider: "google",
           options: {
             redirectTo,
@@ -126,36 +126,43 @@ export default function AuthPage() {
           },
         });
 
-        console.log("[auth] signInWithOAuth result:", { url: data?.url?.slice(0, 80), error: oauthError?.message });
+        if (data?.url) {
+          // Open in system browser via Electron IPC
+          (window as any).palsDesktop.openExternal(data.url);
 
-        // DEBUG: check that code verifier was stored
-        try {
-          const keys: string[] = [];
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && key.includes("code-verifier")) keys.push(key);
-          }
-          console.log("[auth] code-verifier keys after signIn:", keys);
-        } catch {}
+          // Reset loading after 30s timeout (user may close browser)
+          setTimeout(() => setGoogleLoading(false), 30000);
+        }
+      } catch {
+        setGoogleLoading(false);
+      }
+    } else if (isNative) {
+      // Capacitor: open in in-app browser with custom scheme redirect
+      setGoogleLoading(true);
+      try {
+        const redirectTo = "com.waving.pals://auth/callback";
+
+        const { data } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo,
+            skipBrowserRedirect: true,
+          },
+        });
 
         if (data?.url) {
           const { Browser } = await import("@capacitor/browser");
-
-          // Open in in-app browser (Custom Tabs on Android)
-          // The AppShell deep link handler will intercept the redirect,
-          // close the browser, and navigate to /auth/callback
           await Browser.open({ url: data.url });
 
-          // If user closes browser without completing, reset loading
           Browser.addListener("browserFinished", () => {
             setGoogleLoading(false);
           });
         }
-      } catch (err) {
-        console.error("Google OAuth error:", err);
+      } catch {
         setGoogleLoading(false);
       }
     } else {
+      // Web: standard redirect flow
       const redirectTo = `${window.location.origin}/auth/callback`;
       await supabase.auth.signInWithOAuth({
         provider: "google",

@@ -193,7 +193,7 @@ export const MessageBubble = memo(function MessageBubble({
       {/* Bubble */}
       <div
         className={cn(
-          "flex flex-col gap-0.5 max-w-[280px] sm:max-w-sm relative",
+          "flex flex-col gap-0.5 max-w-[75%] sm:max-w-md relative",
           isOwn ? "items-end" : "items-start"
         )}
       >
@@ -272,7 +272,7 @@ export const MessageBubble = memo(function MessageBubble({
             <div
               onClick={handleClick}
               className={cn(
-                "px-4 py-2.5 text-sm leading-relaxed transition-all cursor-pointer active:scale-[0.98]",
+                "px-4 py-2.5 text-sm leading-relaxed transition-all cursor-pointer active:scale-[0.98] break-words whitespace-pre-wrap overflow-hidden [overflow-wrap:anywhere]",
                 isOwn
                   ? "bg-[var(--accent-blue)] text-white rounded-2xl rounded-br-md"
                   : "bg-[var(--bg-surface)] text-[var(--text-primary)] rounded-2xl rounded-bl-md border border-[var(--border)]",
