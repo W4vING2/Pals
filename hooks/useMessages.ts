@@ -364,11 +364,13 @@ export function useMessages() {
         return;
       }
 
-      // Replace temp message with real one (status = "sent")
+      // Replace temp message with real one (status = "sent").
+      // Keep the original plaintext content from the optimistic message —
+      // `inserted.content` may be encrypted ciphertext.
       setMessages((prev) =>
         prev.map((m) =>
           m.id === tempId
-            ? { ...m, ...(inserted as Message), id: (inserted as Message).id, _status: "sent" as const, reactions: [] }
+            ? { ...m, ...(inserted as Message), id: (inserted as Message).id, content: content || null, _status: "sent" as const, reactions: [] }
             : m
         )
       );
