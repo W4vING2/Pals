@@ -226,7 +226,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 80, opacity: 0 }}
             transition={{ type: "spring", stiffness: 300, damping: 28 }}
-            className="fixed bottom-24 lg:bottom-6 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:max-w-sm z-[70]"
+            className="fixed bottom-28 lg:bottom-6 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:max-w-sm z-[70]"
           >
             <div className="bg-red-500/90 backdrop-blur-xl text-white text-sm rounded-2xl px-4 py-3 flex items-center gap-3 shadow-lg">
               <span className="flex-1">{callError}</span>
@@ -241,7 +241,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main
         className={
           showNav
-            ? "min-h-dvh pb-20 lg:pb-0 lg:pl-60"
+            ? "min-h-dvh pb-24 lg:pb-0 lg:pl-60"
             : "min-h-dvh"
         }
       >

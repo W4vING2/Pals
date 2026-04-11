@@ -153,9 +153,10 @@ async function subscribeWeb(userId: string): Promise<boolean> {
       return false;
     }
 
-    let registration = await navigator.serviceWorker.getRegistration("/sw.js");
+    // Get existing registration by scope (default scope is "/") or register fresh
+    let registration = await navigator.serviceWorker.getRegistration("/");
     if (!registration) {
-      registration = await navigator.serviceWorker.register("/sw.js");
+      registration = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
     }
     await navigator.serviceWorker.ready;
 

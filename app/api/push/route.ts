@@ -90,14 +90,26 @@ async function sendFCMv1(token: string, title: string, body: string): Promise<bo
 
 export async function POST(req: NextRequest) {
   try {
+    // Verify the request comes from an authenticated user via Bearer token
+    const authHeader = req.headers.get("Authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Use service-role client for DB access, but verify the caller's token first
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+    const { data: { user: callerUser } } = await supabase.auth.getUser(token);
+    if (!callerUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await req.json();
     const { userId, title, message, url, tag } = body;
 
     if (!userId || !title) {
       return NextResponse.json({ error: "userId and title required" }, { status: 400 });
     }
-
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
     const { data: subscriptions, error } = await supabase
       .from("push_subscriptions")

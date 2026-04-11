@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "pals-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "/usr/local/bin/node",
+      "runtimeArgs": ["/usr/local/bin/npm", "run", "dev"],
       "port": 3000,
       "autoPort": false
     }

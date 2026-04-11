@@ -228,7 +228,12 @@ create table if not exists public.conversations (
   last_message     text,
   last_message_at  timestamptz,
   created_at       timestamptz not null default now(),
-  updated_at       timestamptz not null default now()
+  updated_at       timestamptz not null default now(),
+  is_group         boolean not null default false,
+  name             text,
+  avatar_url       text,
+  created_by       uuid references public.profiles(id) on delete set null,
+  disappear_after  integer default null
 );
 
 alter table public.conversations enable row level security;
@@ -299,7 +304,10 @@ create table if not exists public.messages (
   message_type     text not null default 'text',
   is_read          boolean not null default false,
   is_edited        boolean not null default false,
-  created_at       timestamptz not null default now()
+  created_at       timestamptz not null default now(),
+  reply_to_id      uuid references public.messages(id) on delete set null,
+  reply_preview    jsonb default null,
+  expires_at       timestamptz default null
 );
 
 create index idx_messages_conversation on public.messages(conversation_id, created_at);

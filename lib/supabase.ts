@@ -77,6 +77,10 @@ export type Conversation = {
   name: string | null;
   avatar_url: string | null;
   created_by: string | null;
+  /** Seconds before messages auto-delete. null = off */
+  disappear_after: number | null;
+  /** ID of pinned message in this conversation */
+  pinned_message_id: string | null;
 };
 
 export type ConversationParticipant = {
@@ -99,6 +103,13 @@ export type MessageReaction = {
 
 export type MessageStatus = "sending" | "sent" | "failed";
 
+export type ReplyPreview = {
+  sender_name: string;
+  content: string | null;
+  message_type: "text" | "voice";
+  image_url: string | null;
+};
+
 export type Message = {
   id: string;
   conversation_id: string;
@@ -110,6 +121,16 @@ export type Message = {
   is_read: boolean;
   is_edited: boolean;
   created_at: string;
+  /** ID of the message being replied to */
+  reply_to_id: string | null;
+  /** Cached preview of the replied message */
+  reply_preview: ReplyPreview | null;
+  /** When this message auto-deletes (null = never) */
+  expires_at: string | null;
+  /** ID of original message this was forwarded from */
+  forward_from_id: string | null;
+  /** Snapshot of original sender's name at forward time */
+  forward_from_sender: string | null;
   profiles?: Profile;
   reactions?: MessageReaction[];
   /** Client-side delivery status (not stored in DB) */
@@ -195,7 +216,7 @@ export type Database = {
       conversations: TableDef<
         Conversation,
         { last_message?: string | null; last_message_at?: string | null; is_group?: boolean; name?: string | null; avatar_url?: string | null; created_by?: string | null },
-        Partial<{ last_message: string | null; last_message_at: string | null; updated_at: string; name: string | null; avatar_url: string | null }>
+        Partial<{ last_message: string | null; last_message_at: string | null; updated_at: string; name: string | null; avatar_url: string | null; pinned_message_id: string | null; disappear_after: number | null }>
       >;
       conversation_participants: TableDef<
         ConversationParticipant,
@@ -287,6 +308,9 @@ export function getSupabaseBrowserClient() {
           detectSessionInUrl: true,
           storageKey: "pals-auth-token",
           flowType: "pkce",
+          // Disable navigator.locks — we use a globalThis singleton so
+          // there is only ever one client, no cross-tab lock contention needed.
+          lock: (_name: string, _timeout: number, fn: () => Promise<unknown>) => fn(),
         },
         realtime: {
           params: {

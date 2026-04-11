@@ -5,6 +5,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Conversation, Message, MessageReaction, ConversationParticipant, ProfileSummary, Profile } from "@/lib/supabase";
 import { useAuthStore, useUnreadMessagesStore } from "@/lib/store";
 import { sendPushNotification } from "@/lib/sendPushNotification";
+import { safeCache, cacheConversations, getCachedConversations, cacheMessages, getCachedMessages } from "@/lib/cache";
 import {
   getOrCreateKeyPair,
   getConversationKey,
@@ -12,6 +13,7 @@ import {
   decryptMessage,
   isEncrypted,
 } from "@/lib/crypto";
+import type { ReplyPreview } from "@/lib/supabase";
 
 export type ParticipantWithProfile = ConversationParticipant & { profiles: ProfileSummary };
 
@@ -118,9 +120,13 @@ export function useMessages() {
 
   const loadConversations = useCallback(async () => {
     if (!user) return;
-    // Only show loading spinner on first load, not background refreshes
     const isFirstLoad = !hasLoadedConvsRef.current;
-    if (isFirstLoad) setLoadingConversations(true);
+    if (isFirstLoad) {
+      // Hydrate from IndexedDB cache immediately so UI shows something while fetching
+      const cached = await safeCache(getCachedConversations, []);
+      if (cached.length > 0) setConversations(cached as ConversationWithDetails[]);
+      setLoadingConversations(true);
+    }
     const supabase = getSupabaseBrowserClient();
 
     try {
@@ -181,6 +187,8 @@ export function useMessages() {
           });
 
           setConversations(result);
+          // Persist to IndexedDB for offline access
+          safeCache(() => cacheConversations(result), undefined);
         }
       }
     } catch (err) {
@@ -209,7 +217,12 @@ export function useMessages() {
   }, []);
 
   const loadMessages = useCallback(async (conversationId: string, options?: { silent?: boolean }) => {
-    if (!options?.silent) setLoadingMessages(true);
+    if (!options?.silent) {
+      // Show cached messages immediately
+      const cached = await safeCache(() => getCachedMessages(conversationId), []);
+      if (cached.length > 0) setMessages(cached as Message[]);
+      setLoadingMessages(true);
+    }
     setActiveConversationId(conversationId);
     const supabase = getSupabaseBrowserClient();
 
@@ -247,6 +260,8 @@ export function useMessages() {
           enriched = await decryptMessages(enriched, conversationId);
 
           setMessages(enriched);
+          // Persist to IndexedDB
+          safeCache(() => cacheMessages(conversationId, enriched), undefined);
         }
       }
     } catch (err) {
@@ -268,7 +283,13 @@ export function useMessages() {
   }, [user, loadReactionsForMessages, refreshBadgeCount]);
 
   const sendMessage = useCallback(
-    async (conversationId: string, content: string, imageUrl?: string, audioUrl?: string) => {
+    async (
+      conversationId: string,
+      content: string,
+      imageUrl?: string,
+      audioUrl?: string,
+      replyToMsg?: Message | null,
+    ) => {
       if (!user) return;
       const supabase = getSupabaseBrowserClient();
 
@@ -284,6 +305,19 @@ export function useMessages() {
         }
       }
 
+      // Build reply preview if replying
+      const replyToId = replyToMsg?.id ?? null;
+      let replyPreview: ReplyPreview | null = null;
+      if (replyToMsg) {
+        const senderProfile = replyToMsg.profiles;
+        replyPreview = {
+          sender_name: senderProfile?.display_name ?? senderProfile?.username ?? "Пользователь",
+          content: replyToMsg.content,
+          message_type: replyToMsg.message_type === "voice" ? "voice" : "text",
+          image_url: replyToMsg.image_url,
+        };
+      }
+
       // Optimistic: add message locally with "sending" status (show original text)
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const optimisticMsg: Message = {
@@ -297,6 +331,11 @@ export function useMessages() {
         is_read: false,
         is_edited: false,
         created_at: new Date().toISOString(),
+        reply_to_id: replyToId,
+        reply_preview: replyPreview,
+        expires_at: null,
+        forward_from_id: null,
+        forward_from_sender: null,
         reactions: [],
         _status: "sending",
       };
@@ -311,6 +350,7 @@ export function useMessages() {
           content: encryptedContent || null,
           image_url: imageUrl ?? null,
           ...(audioUrl ? { audio_url: audioUrl, message_type: "voice" as const } : {}),
+          ...(replyToId ? { reply_to_id: replyToId, reply_preview: replyPreview } : {}),
         })
         .select()
         .single();
@@ -370,7 +410,7 @@ export function useMessages() {
         }
       }
     },
-    [user]
+    [user, getEncKey, storeProfile]
   );
 
   const retryMessage = useCallback(
@@ -384,12 +424,25 @@ export function useMessages() {
         prev.map((m) => (m.id === tempId ? { ...m, _status: "sending" as const } : m))
       );
 
+      // Re-encrypt: messages in state are decrypted for display
+      let contentToSend = msg.content || null;
+      if (contentToSend) {
+        const encKey = await getEncKey(msg.conversation_id);
+        if (encKey) {
+          try {
+            contentToSend = await encryptMessage(contentToSend, encKey);
+          } catch {
+            // fallback to unencrypted
+          }
+        }
+      }
+
       const { data: inserted, error } = await supabase
         .from("messages")
         .insert({
           conversation_id: msg.conversation_id,
           sender_id: user.id,
-          content: msg.content || null,
+          content: contentToSend,
           image_url: msg.image_url ?? null,
         })
         .select()
@@ -423,7 +476,7 @@ export function useMessages() {
         p_sender_id: user.id,
       });
     },
-    [user, messages]
+    [user, messages, getEncKey]
   );
 
   const editMessage = useCallback(
@@ -431,9 +484,23 @@ export function useMessages() {
       if (!user) return;
       const supabase = getSupabaseBrowserClient();
 
+      // Find the conversation for this message to get the encryption key
+      const msg = messages.find((m) => m.id === messageId);
+      let contentToStore = newContent;
+      if (msg) {
+        const encKey = await getEncKey(msg.conversation_id);
+        if (encKey) {
+          try {
+            contentToStore = await encryptMessage(newContent, encKey);
+          } catch {
+            // fallback to unencrypted
+          }
+        }
+      }
+
       const { error } = await supabase
         .from("messages")
-        .update({ content: newContent, is_edited: true })
+        .update({ content: contentToStore, is_edited: true })
         .eq("id", messageId)
         .eq("sender_id", user.id);
 
@@ -442,12 +509,12 @@ export function useMessages() {
         return;
       }
 
-      // Update local state immediately
+      // Update local state with decrypted (display) version
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, content: newContent, is_edited: true } : m))
       );
     },
-    [user]
+    [user, messages, getEncKey]
   );
 
   const deleteMessage = useCallback(
@@ -703,12 +770,19 @@ export function useMessages() {
           table: "messages",
           filter: `conversation_id=eq.${activeConversationId}`,
         },
-        (payload) => {
+        async (payload) => {
           const updated = payload.new as Message;
+          let displayContent = updated.content;
+          if (isEncrypted(displayContent)) {
+            const key = await getEncKey(activeConversationId);
+            if (key && displayContent) {
+              displayContent = await decryptMessage(displayContent, key) ?? "🔒 Не удалось расшифровать";
+            }
+          }
           setMessages((prev) =>
             prev.map((m) =>
               m.id === updated.id
-                ? { ...m, content: updated.content, image_url: updated.image_url, audio_url: updated.audio_url, message_type: updated.message_type, is_read: updated.is_read, is_edited: updated.is_edited }
+                ? { ...m, content: displayContent, image_url: updated.image_url, audio_url: updated.audio_url, message_type: updated.message_type, is_read: updated.is_read, is_edited: updated.is_edited }
                 : m
             )
           );
@@ -908,6 +982,116 @@ export function useMessages() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // ── Pin / Unpin message ──────────────────────────────────────
+  const pinMessage = useCallback(
+    async (conversationId: string, messageId: string) => {
+      const supabase = getSupabaseBrowserClient();
+      await supabase
+        .from("conversations")
+        .update({ pinned_message_id: messageId } as any)
+        .eq("id", conversationId);
+      setConversations((prev) =>
+        prev.map((c) => (c.id === conversationId ? { ...c, pinned_message_id: messageId } : c))
+      );
+    },
+    []
+  );
+
+  const unpinMessage = useCallback(
+    async (conversationId: string) => {
+      const supabase = getSupabaseBrowserClient();
+      await supabase
+        .from("conversations")
+        .update({ pinned_message_id: null } as any)
+        .eq("id", conversationId);
+      setConversations((prev) =>
+        prev.map((c) => (c.id === conversationId ? { ...c, pinned_message_id: null } : c))
+      );
+    },
+    []
+  );
+
+  // ── Forward message to other conversations ───────────────────
+  const forwardMessage = useCallback(
+    async (message: Message, targetConversationIds: string[]) => {
+      if (!user) return;
+      const supabase = getSupabaseBrowserClient();
+
+      const senderName =
+        message.profiles?.display_name ?? message.profiles?.username ?? "Пользователь";
+
+      for (const convId of targetConversationIds) {
+        // For text, re-encrypt for the target conversation
+        let contentToSend = message.content;
+        if (contentToSend) {
+          const encKey = await getEncKey(convId);
+          if (encKey) {
+            try {
+              const { encryptMessage } = await import("@/lib/crypto");
+              contentToSend = await encryptMessage(contentToSend, encKey);
+            } catch { /* skip encryption if fails */ }
+          }
+        }
+
+        await supabase.from("messages").insert({
+          conversation_id: convId,
+          sender_id: user.id,
+          content: contentToSend ?? null,
+          image_url: message.image_url ?? null,
+          audio_url: message.audio_url ?? null,
+          message_type: message.message_type,
+          forward_from_id: message.id,
+          forward_from_sender: senderName,
+        } as any);
+
+        // Update last_message
+        const preview = message.audio_url
+          ? "🎤 Голосовое"
+          : message.image_url
+          ? "📷 Фото"
+          : (message.content ?? "").slice(0, 60);
+
+        await supabase
+          .from("conversations")
+          .update({ last_message: `↩ ${preview}`, last_message_at: new Date().toISOString() })
+          .eq("id", convId);
+      }
+    },
+    [user, getEncKey]
+  );
+
+  // ── Set disappearing timer for a conversation ────────────────
+  const setDisappearTimer = useCallback(
+    async (conversationId: string, seconds: number | null) => {
+      const supabase = getSupabaseBrowserClient();
+      await supabase
+        .from("conversations")
+        .update({ disappear_after: seconds })
+        .eq("id", conversationId);
+      // Reflect in local state immediately
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId ? { ...c, disappear_after: seconds } : c
+        )
+      );
+    },
+    []
+  );
+
+  // ── Auto-clean expired messages every 5 seconds ──────────────
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setMessages((prev) => {
+        const next = prev.filter(
+          (m) => !m.expires_at || new Date(m.expires_at).getTime() > now
+        );
+        return next.length !== prev.length ? next : prev;
+      });
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   return {
     conversations,
     messages,
@@ -924,5 +1108,9 @@ export function useMessages() {
     uploadMessageImage,
     getOrCreateConversation,
     deleteConversation,
+    setDisappearTimer,
+    pinMessage,
+    unpinMessage,
+    forwardMessage,
   };
 }

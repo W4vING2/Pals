@@ -46,7 +46,7 @@ export function DesktopSidebar() {
   }
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-[var(--border)] bg-[var(--bg-surface)] lg:flex">
+    <aside className="desktop-sidebar fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-[var(--border)] bg-[var(--bg-surface)] lg:flex">
       {/* Logo */}
       <div className="flex h-16 items-center px-6">
         <Link href="/" className="gradient-text text-xl font-bold">

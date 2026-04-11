@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { Home, Search, MessageCircle, Bell, User } from "lucide-react";
 import { useAuthStore, useNotificationStore, useUnreadMessagesStore } from "@/lib/store";
-import { cn } from "@/lib/utils";
+import { haptic } from "@/lib/haptics";
 
 type NavItem = {
   href: string;
@@ -16,25 +16,26 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: "/", icon: Home, label: "Главная" },
-  { href: "/search", icon: Search, label: "Поиск" },
-  { href: "/messages", icon: MessageCircle, label: "Чат" },
-  { href: "/notifications", icon: Bell, label: "Уведомления" },
-  { href: "/profile", icon: User, label: "Профиль", isDynamic: true },
+  { href: "/",              icon: Home,          label: "Главная"  },
+  { href: "/search",        icon: Search,        label: "Поиск"    },
+  { href: "/messages",      icon: MessageCircle, label: "Чаты"     },
+  { href: "/notifications", icon: Bell,          label: "Уведомл." },
+  { href: "/profile",       icon: User,          label: "Профиль", isDynamic: true },
 ];
 
-const spring = { type: "spring", stiffness: 500, damping: 35, mass: 0.8 } as const;
+const PILL_SPRING = { type: "spring", stiffness: 380, damping: 28, mass: 0.9 } as const;
+const TAP_SPRING  = { type: "spring", stiffness: 500, damping: 25 } as const;
 
 export function MobileNavBar() {
-  const pathname = usePathname();
-  const profile = useAuthStore((s) => s.profile);
-  const unreadCount = useNotificationStore((s) => s.unreadCount);
-  const unreadMessages = useUnreadMessagesStore((s) => s.unreadMessagesCount);
+  const pathname   = usePathname();
+  const profile    = useAuthStore((s) => s.profile);
+  const unreadNoti = useNotificationStore((s) => s.unreadCount);
+  const unreadMsgs = useUnreadMessagesStore((s) => s.unreadMessagesCount);
 
-  function isActive(href: string, isDynamic?: boolean) {
-    if (isDynamic) return pathname.startsWith("/profile");
-    if (href === "/") return pathname === "/";
-    return pathname.startsWith(href);
+  function isActive(item: NavItem) {
+    if (item.isDynamic) return pathname.startsWith("/profile");
+    if (item.href === "/") return pathname === "/";
+    return pathname.startsWith(item.href);
   }
 
   function resolveHref(item: NavItem) {
@@ -43,85 +44,163 @@ export function MobileNavBar() {
     return item.href;
   }
 
+  function badgeFor(item: NavItem) {
+    if (item.href === "/messages")       return unreadMsgs;
+    if (item.href === "/notifications")  return unreadNoti;
+    return 0;
+  }
+
   return (
-    <nav
-      className="fixed inset-x-0 bottom-0 z-50 lg:hidden"
+    /* Позиционирующий контейнер — full width только для позиционирования */
+    <div
       style={{
-        background: "rgba(0, 0, 0, 0.85)",
-        backdropFilter: "blur(28px) saturate(180%)",
-        WebkitBackdropFilter: "blur(28px) saturate(180%)",
-        borderTop: "1px solid rgba(255, 255, 255, 0.06)",
-        boxShadow: "0 -1px 20px rgba(0, 0, 0, 0.5)",
+        position: "fixed",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 50,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "flex-end",
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 14px)",
+        pointerEvents: "none",
       }}
+      className="lg:hidden"
     >
+      {/* Floating pill — ширина по содержимому */}
       <div
-        className="flex items-center justify-around px-4"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)", height: 56 }}
+        style={{
+          pointerEvents: "auto",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          padding: "6px 8px",
+          borderRadius: 9999,
+          background: "rgba(16, 16, 20, 0.88)",
+          backdropFilter: "blur(40px) saturate(180%)",
+          WebkitBackdropFilter: "blur(40px) saturate(180%)",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+          boxShadow:
+            "0 4px 6px rgba(0,0,0,0.2), " +
+            "0 10px 40px rgba(0,0,0,0.55), " +
+            "inset 0 1px 0 rgba(255,255,255,0.09)",
+        }}
       >
         {NAV_ITEMS.map((item) => {
-          const active = isActive(item.href, item.isDynamic);
-          const Icon = item.icon;
-          const href = resolveHref(item);
-
-          // Badge count for this item
-          const badgeCount =
-            item.label === "Чат"
-              ? unreadMessages
-              : item.label === "Уведомления"
-              ? unreadCount
-              : 0;
+          const active = isActive(item);
+          const Icon   = item.icon;
+          const badge  = badgeFor(item);
 
           return (
             <Link
               key={item.label}
-              href={href}
-              className="relative flex items-center justify-center w-12 h-12"
+              href={resolveHref(item)}
+              style={{ textDecoration: "none", display: "block" }}
+              onClick={() => haptic("light")}
             >
               <motion.div
-                className="relative flex items-center justify-center"
-                whileTap={{ scale: 0.85 }}
-                transition={spring}
+                whileTap={{ scale: 0.82 }}
+                transition={TAP_SPRING}
+                style={{
+                  position: "relative",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 3,
+                  width: 62,
+                  height: 50,
+                  borderRadius: 9999,
+                  cursor: "pointer",
+                }}
               >
-                {/* Background pill indicator */}
+                {/* Плавающий индикатор активного таба */}
                 {active && (
                   <motion.div
-                    layoutId="nav-pill"
-                    className="absolute -inset-x-2 -inset-y-1.5 rounded-2xl"
-                    style={{ background: "rgba(168, 85, 247, 0.15)" }}
-                    transition={spring}
+                    layoutId="active-tab"
+                    transition={PILL_SPRING}
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      borderRadius: 9999,
+                      background: "rgba(124, 58, 237, 0.20)",
+                      border: "1px solid rgba(167, 139, 250, 0.25)",
+                      boxShadow:
+                        "inset 0 1px 0 rgba(255,255,255,0.12), " +
+                        "0 0 12px rgba(124, 58, 237, 0.15)",
+                    }}
                   />
                 )}
 
-                <motion.div
-                  animate={active ? { scale: 1.15 } : { scale: 1 }}
-                  transition={spring}
-                  className="relative"
-                >
+                {/* Иконка */}
+                <div style={{ position: "relative", zIndex: 1 }}>
                   <Icon
-                    className={cn(
-                      "h-6 w-6 transition-colors duration-200",
-                      active
-                        ? "text-[var(--accent-blue)]"
-                        : "text-[var(--text-secondary)]"
-                    )}
-                    strokeWidth={active ? 2.4 : 1.8}
+                    style={{
+                      width: 22,
+                      height: 22,
+                      strokeWidth: active ? 2.2 : 1.6,
+                      color: active
+                        ? "rgba(167, 139, 250, 1)"
+                        : "rgba(255,255,255,0.38)",
+                      filter: active
+                        ? "drop-shadow(0 0 6px rgba(139, 92, 246, 0.6))"
+                        : "none",
+                      transition: "color 0.2s ease, filter 0.2s ease",
+                    }}
                   />
-                  {badgeCount > 0 && (
-                    <motion.span
+
+                  {/* Badge */}
+                  {badge > 0 && (
+                    <motion.div
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
                       transition={{ type: "spring", stiffness: 500, damping: 20 }}
-                      className="absolute -right-2 -top-1.5 flex h-4.5 min-w-[18px] items-center justify-center rounded-full bg-[var(--destructive)] px-1 text-[10px] font-bold text-white"
+                      style={{
+                        position: "absolute",
+                        top: -5,
+                        right: -7,
+                        minWidth: 15,
+                        height: 15,
+                        borderRadius: 9999,
+                        background: "#ef4444",
+                        boxShadow: "0 2px 6px rgba(239,68,68,0.55)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: "0 3px",
+                        color: "#fff",
+                        fontSize: 9,
+                        fontWeight: 700,
+                        lineHeight: 1,
+                      }}
                     >
-                      {badgeCount > 99 ? "99+" : badgeCount}
-                    </motion.span>
+                      {badge > 99 ? "99+" : badge}
+                    </motion.div>
                   )}
-                </motion.div>
+                </div>
+
+                {/* Лейбл */}
+                <span
+                  style={{
+                    position: "relative",
+                    zIndex: 1,
+                    fontSize: 10,
+                    fontWeight: 500,
+                    lineHeight: 1,
+                    letterSpacing: "0.01em",
+                    color: active
+                      ? "rgba(196, 181, 253, 1)"
+                      : "rgba(255,255,255,0.36)",
+                    transition: "color 0.2s ease",
+                  }}
+                >
+                  {item.label}
+                </span>
               </motion.div>
             </Link>
           );
         })}
       </div>
-    </nav>
+    </div>
   );
 }

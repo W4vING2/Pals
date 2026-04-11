@@ -131,7 +131,11 @@ export async function encryptMessage(plaintext: string, aesKey: CryptoKey): Prom
   combined.set(iv, 0);
   combined.set(new Uint8Array(ciphertext), iv.length);
 
-  return ENC_PREFIX + btoa(String.fromCharCode(...combined));
+  let binary = "";
+  for (let i = 0; i < combined.length; i++) {
+    binary += String.fromCharCode(combined[i]);
+  }
+  return ENC_PREFIX + btoa(binary);
 }
 
 /**

@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, ArrowUp, TrendingUp, Users as UsersIcon } from "lucide-react";
+import { Plus, ArrowUp, TrendingUp, Users as UsersIcon, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { useBlockedUsers } from "@/hooks/useBlockedUsers";
@@ -19,6 +19,8 @@ import { CreateStory } from "@/components/stories/CreateStory";
 import { AnimatedList } from "@/components/shared/AnimatedList";
 import { PostCard } from "@/components/feed/PostCard";
 import { useAuthStore } from "@/lib/store";
+import { usePullToRefresh } from "@/hooks/usePullToRefresh";
+import { safeCache, cachePosts, getCachedPosts } from "@/lib/cache";
 import type { Post, Profile, Story } from "@/lib/supabase";
 
 const PAGE_SIZE = 10;
@@ -68,7 +70,14 @@ export default function FeedPage() {
     const from = currentPage * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
-    if (!hasLoadedRef.current) setLoading(true);
+    if (!hasLoadedRef.current) {
+      // Show cached posts immediately before network response
+      const cached = await safeCache(getCachedPosts, []);
+      if (cached.length > 0) {
+        setPosts(cached as Post[]);
+      }
+      setLoading(true);
+    }
 
     try {
       const { data, error } = await supabase
@@ -91,6 +100,10 @@ export default function FeedPage() {
           pageRef.current = currentPage + 1;
         }
         setHasMore(newPosts.length === PAGE_SIZE);
+        // Persist first page to IndexedDB
+        if (reset && newPosts.length > 0) {
+          safeCache(() => cachePosts(newPosts), undefined);
+        }
 
         if (user && newPosts.length > 0) {
           const postIds = newPosts.map((p) => p.id);
@@ -219,6 +232,15 @@ export default function FeedPage() {
     return () => { supabase.removeChannel(channel); };
   }, [user]);
 
+  // Pull to refresh
+  const { pullDistance, isRefreshing, triggered } = usePullToRefresh({
+    onRefresh: async () => {
+      setNewPostCount(0);
+      if (tab === "following") await loadPosts(true);
+      else await loadTrending();
+    },
+  });
+
   // FAB hide/show on scroll
   useEffect(() => {
     const handleScroll = () => {
@@ -248,6 +270,30 @@ export default function FeedPage() {
   return (
     <PageTransition>
       <div className="max-w-2xl mx-auto px-4 py-6">
+        {/* Pull-to-refresh indicator */}
+        <AnimatePresence>
+          {(pullDistance > 8 || isRefreshing) && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="flex justify-center items-center py-2 -mt-2 mb-2"
+            >
+              <motion.div
+                animate={isRefreshing ? { rotate: 360 } : { rotate: (pullDistance / 72) * 180 }}
+                transition={isRefreshing ? { repeat: Infinity, duration: 0.8, ease: "linear" } : { duration: 0 }}
+                className={cn(
+                  "w-8 h-8 rounded-full flex items-center justify-center transition-colors",
+                  triggered || isRefreshing
+                    ? "text-[var(--accent-blue)] bg-[var(--accent-blue)]/10"
+                    : "text-[var(--text-secondary)] bg-[var(--bg-elevated)]"
+                )}
+              >
+                <RefreshCw className="w-4 h-4" />
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         {/* Stories */}
         <StoryCircles
           onOpenViewer={(userId, stories) => {

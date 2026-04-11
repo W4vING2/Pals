@@ -13,6 +13,7 @@ import { CreateGroup } from "@/components/messenger/CreateGroup";
 import { GroupSettings } from "@/components/messenger/GroupSettings";
 import { PageTransition } from "@/components/layout/PageTransition";
 import { cn } from "@/lib/utils";
+import type { Message } from "@/lib/supabase";
 
 export default function MessagesPage() {
   const router = useRouter();
@@ -32,6 +33,10 @@ export default function MessagesPage() {
     retryMessage,
     uploadMessageImage,
     deleteConversation,
+    setDisappearTimer,
+    pinMessage,
+    unpinMessage,
+    forwardMessage,
   } = useMessages();
   const { initiateCall } = useCalls();
 
@@ -86,12 +91,21 @@ export default function MessagesPage() {
     setMobileView("list");
   }, []);
 
-  const activeConv =
-    conversations.find((c) => c.id === activeConversationId) ?? null;
+  const activeConv = conversations.find((c) => c.id === activeConversationId) ?? null;
 
-  const handleSend = async (content: string, imageUrl?: string, audioUrl?: string) => {
+  const handlePinMessage = async (messageId: string) => {
     if (!activeConversationId) return;
-    await sendMessage(activeConversationId, content, imageUrl, audioUrl);
+    await pinMessage(activeConversationId, messageId);
+  };
+
+  const handleUnpinMessage = async () => {
+    if (!activeConversationId) return;
+    await unpinMessage(activeConversationId);
+  };
+
+  const handleSend = async (content: string, imageUrl?: string, audioUrl?: string, replyToMsg?: Message | null) => {
+    if (!activeConversationId) return;
+    await sendMessage(activeConversationId, content, imageUrl, audioUrl, replyToMsg);
   };
 
   const handleInitiateCall = async (type: "voice" | "video") => {
@@ -148,6 +162,11 @@ export default function MessagesPage() {
             onInitiateCall={handleInitiateCall}
             onOpenGroupSettings={() => setGroupSettingsOpen(true)}
             onBack={handleBack}
+            onSetDisappearTimer={setDisappearTimer}
+            onForwardMessage={forwardMessage}
+            onPinMessage={handlePinMessage}
+            onUnpinMessage={handleUnpinMessage}
+            conversations={conversations}
           />
         </div>
 
@@ -195,6 +214,11 @@ export default function MessagesPage() {
                   onInitiateCall={handleInitiateCall}
                   onOpenGroupSettings={() => setGroupSettingsOpen(true)}
                   onBack={handleBack}
+                  onSetDisappearTimer={setDisappearTimer}
+                  onForwardMessage={forwardMessage}
+                  onPinMessage={handlePinMessage}
+                  onUnpinMessage={handleUnpinMessage}
+                  conversations={conversations}
                 />
               </motion.div>
             )}

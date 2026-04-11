@@ -279,6 +279,38 @@ textarea:focus-visible {
   color: var(--text-primary);
 }
 
+/* ── Electron macOS titlebar drag region ──────────────────── */
+.electron-drag {
+  -webkit-app-region: drag;
+}
+.electron-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* When running inside Electron, add top padding for the hidden titlebar */
+html.electron-app body {
+  padding-top: env(titlebar-area-height, 38px);
+}
+html.electron-app .electron-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 38px;
+  z-index: 9999;
+  -webkit-app-region: drag;
+}
+/* Allow clicks on interactive elements within the drag region */
+html.electron-app .electron-titlebar a,
+html.electron-app .electron-titlebar button,
+html.electron-app .electron-titlebar input {
+  -webkit-app-region: no-drag;
+}
+/* Make sidebar also account for titlebar space in Electron */
+html.electron-app .desktop-sidebar {
+  padding-top: 38px;
+}
+
 /* ── Reduced motion ───────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *,

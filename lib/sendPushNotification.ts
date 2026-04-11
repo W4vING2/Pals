@@ -1,6 +1,9 @@
+import { getSupabaseBrowserClient } from "@/lib/supabase";
+
 /**
  * Fire-and-forget push notification sender.
  * Calls the /api/push route to send a notification to a specific user.
+ * Passes the current user's auth token in the Authorization header.
  */
 export function sendPushNotification(params: {
   userId: string;
@@ -9,12 +12,19 @@ export function sendPushNotification(params: {
   url?: string;
   tag?: string;
 }) {
-  // Fire and forget — don't await, don't block UI
-  fetch("/api/push", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  }).catch(() => {
-    // Silently ignore push send failures
+  // Get session async, then fire-and-forget
+  const supabase = getSupabaseBrowserClient();
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    if (!session?.access_token) return;
+    fetch("/api/push", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify(params),
+    }).catch(() => {
+      // Silently ignore push send failures
+    });
   });
 }
