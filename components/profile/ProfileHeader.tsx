@@ -60,6 +60,7 @@ export function ProfileHeader({
   // Check if this user has active stories
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
     supabase
       .from("stories")
       .select("id")

@@ -298,6 +298,7 @@ declare global {
 
 export function getSupabaseBrowserClient() {
   if (!globalThis.__supabaseBrowserClient) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     globalThis.__supabaseBrowserClient = createClient<Database>(
       supabaseUrl,
       supabaseAnonKey,
@@ -310,7 +311,7 @@ export function getSupabaseBrowserClient() {
           flowType: "pkce",
           // Disable navigator.locks — we use a globalThis singleton so
           // there is only ever one client, no cross-tab lock contention needed.
-          lock: (_name: string, _timeout: number, fn: () => Promise<unknown>) => fn(),
+          lock: (_name: string, _timeout: number, fn: () => Promise<unknown>) => fn() as unknown as Promise<never>,
         },
         realtime: {
           params: {
@@ -338,9 +339,9 @@ export function getSupabaseBrowserClient() {
           },
         },
       }
-    );
+    ) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
   }
-  return globalThis.__supabaseBrowserClient;
+  return globalThis.__supabaseBrowserClient!;
 }
 
 // Single shared alias — always use this in client components
