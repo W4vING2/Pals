@@ -35,6 +35,8 @@ function CallbackInner() {
       }
     }
 
+    if (!supabase) { goAuth(); return; }
+
     // Exchange code for session
     if (code) {
       supabase.auth.exchangeCodeForSession(code).catch(() => {});
@@ -48,7 +50,7 @@ function CallbackInner() {
     const poll = async () => {
       if (cancelled) return;
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await supabase!.auth.getSession();
         if (session) {
           goHome();
           return;
