@@ -4,14 +4,18 @@ import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
 import { GoogleAuth } from "google-auth-library";
 import path from "path";
+import type { Database } from "@/lib/supabase";
+
+export const runtime = "nodejs";
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? "";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SUPABASE_SERVICE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
-webpush.setVapidDetails("mailto:noreply@pals-app.com", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails("mailto:noreply@pals-app.com", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
 
 // ── FCM v1 API ──────────────────────────────────────────────
 
@@ -19,6 +23,15 @@ const FCM_PROJECT_ID = "pals-560da";
 const FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 
 let cachedAuth: GoogleAuth | null = null;
+
+type PushRequestBody = {
+  userId?: unknown;
+  title?: unknown;
+  message?: unknown;
+  url?: unknown;
+  tag?: unknown;
+  conversationId?: unknown;
+};
 
 function getGoogleAuth(): GoogleAuth {
   if (cachedAuth) return cachedAuth;
@@ -40,7 +53,31 @@ function getGoogleAuth(): GoogleAuth {
   return cachedAuth;
 }
 
-async function sendFCMv1(token: string, title: string, body: string): Promise<boolean> {
+function sanitizeNotificationUrl(input: unknown): string {
+  if (typeof input !== "string") return "/messages";
+  if (!input.startsWith("/")) return "/messages";
+  if (input.startsWith("//")) return "/messages";
+  return input;
+}
+
+async function canCallerNotifyTarget(
+  supabase: ReturnType<typeof createClient<Database>>,
+  conversationId: string,
+  callerId: string,
+  targetId: string
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("conversation_participants")
+    .select("user_id")
+    .eq("conversation_id", conversationId)
+    .in("user_id", [callerId, targetId]);
+
+  if (error) return false;
+  const members = new Set((data ?? []).map((row) => row.user_id));
+  return members.has(callerId) && members.has(targetId);
+}
+
+async function sendFCMv1(token: string, title: string, body: string, url: string): Promise<boolean> {
   try {
     const auth = getGoogleAuth();
     const client = await auth.getClient();
@@ -67,7 +104,7 @@ async function sendFCMv1(token: string, title: string, body: string): Promise<bo
                 channel_id: "pals_messages",
               },
             },
-            data: { title, body, url: "/messages" },
+            data: { title, body, url },
           },
         }),
       }
@@ -90,6 +127,10 @@ async function sendFCMv1(token: string, title: string, body: string): Promise<bo
 
 export async function POST(req: NextRequest) {
   try {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+      return NextResponse.json({ error: "Push service is not configured" }, { status: 500 });
+    }
+
     // Verify the request comes from an authenticated user via Bearer token
     const authHeader = req.headers.get("Authorization");
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
@@ -98,17 +139,43 @@ export async function POST(req: NextRequest) {
     }
 
     // Use service-role client for DB access, but verify the caller's token first
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+    const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_KEY);
     const { data: { user: callerUser } } = await supabase.auth.getUser(token);
     if (!callerUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
-    const { userId, title, message, url, tag } = body;
+    const body = (await req.json()) as PushRequestBody;
+    const userId = typeof body.userId === "string" ? body.userId : "";
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    const message = typeof body.message === "string" ? body.message : "";
+    const tag = typeof body.tag === "string" ? body.tag : "pals-notification";
+    const conversationId = typeof body.conversationId === "string" ? body.conversationId : "";
+    const safeUrl = sanitizeNotificationUrl(body.url);
 
-    if (!userId || !title) {
-      return NextResponse.json({ error: "userId and title required" }, { status: 400 });
+    if (!userId || !title || !conversationId) {
+      return NextResponse.json(
+        { error: "userId, title and conversationId are required" },
+        { status: 400 }
+      );
+    }
+
+    if (userId === callerUser.id) {
+      return NextResponse.json({ sent: 0 });
+    }
+
+    if (title.length > 120 || message.length > 500 || tag.length > 100) {
+      return NextResponse.json({ error: "Notification payload is too large" }, { status: 400 });
+    }
+
+    const allowed = await canCallerNotifyTarget(
+      supabase,
+      conversationId,
+      callerUser.id,
+      userId
+    );
+    if (!allowed) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const { data: subscriptions, error } = await supabase
@@ -123,8 +190,8 @@ export async function POST(req: NextRequest) {
     const payload = JSON.stringify({
       title,
       body: message ?? "",
-      url: url ?? "/",
-      tag: tag ?? "pals-notification",
+      url: safeUrl,
+      tag,
       icon: "/icon-192.png",
     });
 
@@ -137,7 +204,7 @@ export async function POST(req: NextRequest) {
           // FCM for Android (Capacitor)
           if (sub.endpoint.startsWith("fcm:")) {
             const fcmToken = sub.endpoint.replace("fcm:", "");
-            const ok = await sendFCMv1(fcmToken, title, message ?? "");
+            const ok = await sendFCMv1(fcmToken, title, message ?? "", safeUrl);
             if (ok) sent++;
             else staleEndpoints.push(sub.endpoint);
             return;

@@ -95,7 +95,7 @@ export function DesktopSidebar() {
       {profile && (
         <div className="border-t border-[var(--border)] p-3">
           <Link
-            href={`/${profile.username}`}
+            href={`/profile/${profile.username}`}
             className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-[var(--bg-elevated)]"
           >
             {profile.avatar_url ? (

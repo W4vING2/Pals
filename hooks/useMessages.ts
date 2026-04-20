@@ -404,6 +404,7 @@ export function useMessages() {
         for (const p of participants) {
           sendPushNotification({
             userId: p.user_id,
+            conversationId,
             title: senderName,
             message: pushBody,
             url: "/messages",
@@ -639,6 +640,7 @@ export function useMessages() {
   const getOrCreateConversation = useCallback(
     async (otherUserId: string): Promise<string | null> => {
       if (!user) return null;
+      if (otherUserId === user.id) return null;
       const supabase = getSupabaseBrowserClient();
 
       const { data: myParticipations } = await supabase
@@ -649,17 +651,38 @@ export function useMessages() {
       if (myParticipations && myParticipations.length > 0) {
         const myConvIds = myParticipations.map((p) => p.conversation_id);
 
-        const { data: allParticipants } = await supabase
-          .from("conversation_participants")
-          .select("conversation_id, user_id")
-          .in("conversation_id", myConvIds);
+        const [{ data: allParticipants }, { data: directConversations }] = await Promise.all([
+          supabase
+            .from("conversation_participants")
+            .select("conversation_id, user_id")
+            .in("conversation_id", myConvIds),
+          supabase
+            .from("conversations")
+            .select("id")
+            .in("id", myConvIds)
+            .eq("is_group", false),
+        ]);
 
-        if (allParticipants) {
-          const sharedConv = allParticipants.find(
-            (p) => p.user_id === otherUserId
-          );
-          if (sharedConv) {
-            return sharedConv.conversation_id;
+        if (allParticipants && directConversations) {
+          const directIds = new Set(directConversations.map((c) => c.id));
+          const membersByConversation = new Map<string, Set<string>>();
+
+          for (const participant of allParticipants) {
+            if (!directIds.has(participant.conversation_id)) continue;
+            if (!membersByConversation.has(participant.conversation_id)) {
+              membersByConversation.set(participant.conversation_id, new Set());
+            }
+            membersByConversation.get(participant.conversation_id)!.add(participant.user_id);
+          }
+
+          for (const [conversationId, members] of membersByConversation) {
+            if (
+              members.size === 2 &&
+              members.has(user.id) &&
+              members.has(otherUserId)
+            ) {
+              return conversationId;
+            }
           }
         }
       }
@@ -668,7 +691,13 @@ export function useMessages() {
 
       const { error: convError } = await supabase
         .from("conversations")
-        .insert({ id: convId, last_message: null } as Record<string, unknown>);
+        .insert({
+          id: convId,
+          created_by: user.id,
+          is_group: false,
+          last_message: null,
+          last_message_at: null,
+        } as Record<string, unknown>);
 
       if (convError) {
         console.error("Error creating conversation:", convError);
@@ -936,7 +965,6 @@ export function useMessages() {
   useEffect(() => {
     if (!user) return;
 
-    let wakeTimeout: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
 
     const handleVisibilityChange = () => {
@@ -970,8 +998,6 @@ export function useMessages() {
         }
       };
 
-      // Clear any pending wake
-      if (wakeTimeout) clearTimeout(wakeTimeout);
       tryRefresh();
     };
 
@@ -979,7 +1005,6 @@ export function useMessages() {
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      if (wakeTimeout) clearTimeout(wakeTimeout);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -1080,6 +1105,23 @@ export function useMessages() {
     []
   );
 
+  // ── Mute / unmute a conversation ─────────────────────────────
+  const muteConversation = useCallback(async (conversationId: string, muted: boolean) => {
+    if (!user) return;
+    const supabase = getSupabaseBrowserClient();
+    await supabase
+      .from("conversation_participants")
+      .update({ is_muted: muted })
+      .eq("conversation_id", conversationId)
+      .eq("user_id", user.id);
+    setConversations(prev =>
+      prev.map(c => c.id === conversationId
+        ? { ...c, participants: c.participants.map(p => p.user_id === user.id ? { ...p, is_muted: muted } : p) }
+        : c
+      )
+    );
+  }, [user]);
+
   // ── Auto-clean expired messages every 5 seconds ──────────────
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1114,5 +1156,6 @@ export function useMessages() {
     pinMessage,
     unpinMessage,
     forwardMessage,
+    muteConversation,
   };
 }

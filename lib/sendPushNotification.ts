@@ -7,6 +7,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase";
  */
 export function sendPushNotification(params: {
   userId: string;
+  conversationId: string;
   title: string;
   message?: string;
   url?: string;

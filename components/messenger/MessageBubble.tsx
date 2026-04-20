@@ -1,11 +1,12 @@
 "use client";
 
 import React, { memo, useState, useRef, useEffect } from "react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import { motion, AnimatePresence, useMotionValue, useTransform, useAnimation } from "framer-motion";
 import {
   Check, CheckCheck, Pencil, Trash2, X, CornerDownLeft,
-  AlertCircle, Loader2, Copy, Reply, Timer, Share2, Pin, PinOff
+  AlertCircle, Loader2, Copy, Reply, Timer, Share2, Pin, PinOff, Clock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ImageLightbox } from "@/components/shared/ImageLightbox";
@@ -13,6 +14,13 @@ import { AudioPlayer } from "./AudioPlayer";
 import { useAuthStore } from "@/lib/store";
 import { haptic } from "@/lib/haptics";
 import type { Message } from "@/lib/supabase";
+
+const LinkPreview = dynamic(
+  () => import("./LinkPreview").then((m) => ({ default: m.LinkPreview })),
+  { ssr: false }
+);
+
+const URL_REGEX = /(https?:\/\/[^\s]+)/g;
 
 const QUICK_EMOJIS = ["❤️", "😂", "👍", "😮", "😢", "🔥"];
 const SWIPE_THRESHOLD = 64; // px to trigger reply
@@ -139,16 +147,7 @@ export const MessageBubble = memo(function MessageBubble({
   onPin,
   onUnpin,
 }: MessageBubbleProps) {
-  if (message.message_type === "system") {
-    return (
-      <div className="flex justify-center my-2">
-        <span className="text-xs text-[var(--text-secondary)] bg-[var(--bg-elevated)] px-3 py-1 rounded-full">
-          {message.content}
-        </span>
-      </div>
-    );
-  }
-
+  const isSystemMessage = message.message_type === "system";
   const profile = message.profiles;
   const { user } = useAuthStore();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -295,6 +294,16 @@ export const MessageBubble = memo(function MessageBubble({
     dragX.set(0);
   };
 
+  if (isSystemMessage) {
+    return (
+      <div className="flex justify-center my-2">
+        <span className="text-xs text-[var(--text-secondary)] bg-[var(--bg-elevated)] px-3 py-1 rounded-full">
+          {message.content}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -320,7 +329,7 @@ export const MessageBubble = memo(function MessageBubble({
       {/* Avatar */}
       <div className="w-7 shrink-0">
         {!isOwn && showAvatar && profile?.avatar_url ? (
-          <img src={profile.avatar_url} alt={profile.username ?? "User"} className="w-7 h-7 rounded-full object-cover" />
+          <img src={profile.avatar_url} alt={profile.username ?? "User"} className="w-7 h-7 rounded-full object-cover" loading="lazy" />
         ) : !isOwn && showAvatar ? (
           <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-xs font-semibold">
             {(profile?.display_name ?? profile?.username ?? "?")[0]?.toUpperCase()}
@@ -425,22 +434,31 @@ export const MessageBubble = memo(function MessageBubble({
             </div>
           </div>
         ) : (
-          message.content && (
-            <div
-              onClick={handleClick}
-              className={cn(
-                "px-4 py-2.5 text-sm leading-relaxed transition-all cursor-pointer active:scale-[0.98] break-words whitespace-pre-wrap overflow-hidden [overflow-wrap:anywhere]",
-                isOwn
-                  ? "bg-[var(--accent-blue)] text-white rounded-2xl rounded-br-md"
-                  : "bg-[var(--bg-surface)] text-[var(--text-primary)] rounded-2xl rounded-bl-md border border-[var(--border)]",
-                message._status === "failed" && "opacity-60",
-                message._status === "sending" && "opacity-80"
-              )}
-            >
-              {/* Render @mentions highlighted */}
-              <MentionText content={message.content} isOwn={isOwn} />
-            </div>
-          )
+          message.content && (() => {
+            const urlMatches = message.content.match(URL_REGEX);
+            const firstUrl = urlMatches?.[0] ?? null;
+            return (
+              <>
+                <div
+                  onClick={handleClick}
+                  className={cn(
+                    "px-4 py-2.5 text-sm leading-relaxed transition-all cursor-pointer active:scale-[0.98] break-words whitespace-pre-wrap overflow-hidden [overflow-wrap:anywhere]",
+                    isOwn
+                      ? "bg-[var(--accent-blue)] text-white rounded-2xl rounded-br-md"
+                      : "bg-[var(--bg-surface)] text-[var(--text-primary)] rounded-2xl rounded-bl-md border border-[var(--border)]",
+                    message._status === "failed" && "opacity-60",
+                    message._status === "sending" && "opacity-80"
+                  )}
+                >
+                  {/* Render @mentions and URLs highlighted */}
+                  <MentionText content={message.content} isOwn={isOwn} />
+                </div>
+                {firstUrl && (
+                  <LinkPreview url={firstUrl} isMine={isOwn} />
+                )}
+              </>
+            );
+          })()
         )}
 
         {/* Reactions */}
@@ -475,7 +493,9 @@ export const MessageBubble = memo(function MessageBubble({
             {isPinned && <Pin className="w-2.5 h-2.5 text-amber-400" />}
             {isOwn && (
               message._status === "sending" ? (
-                <Loader2 className="w-3 h-3 text-[var(--text-secondary)] animate-spin" />
+                <span className="ml-1 flex items-center">
+                  <Clock className="w-3 h-3 text-white/40" />
+                </span>
               ) : message._status === "failed" ? (
                 <button
                   onClick={(e) => { e.stopPropagation(); onRetry?.(message.id); }}
@@ -484,10 +504,19 @@ export const MessageBubble = memo(function MessageBubble({
                   <AlertCircle className="w-3 h-3" />
                   <span className="text-[9px] font-medium">Повторить</span>
                 </button>
-              ) : message.is_read ? (
-                <CheckCheck className="w-3 h-3 text-[var(--accent-mint)]" />
               ) : (
-                <Check className="w-3 h-3 text-[var(--text-secondary)]" />
+                <span className="ml-1 flex items-center">
+                  {message.is_read ? (
+                    <svg width="16" height="10" viewBox="0 0 16 10" className="text-blue-400">
+                      <path d="M1 5l3 3 5-6" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M6 5l3 3 5-6" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  ) : (
+                    <svg width="10" height="10" viewBox="0 0 10 10" className="text-white/40">
+                      <path d="M1 5l3 3 5-6" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </span>
               )
             )}
           </div>
@@ -580,9 +609,10 @@ export const MessageBubble = memo(function MessageBubble({
   );
 });
 
-/** Renders message content with @mentions highlighted */
+/** Renders message content with @mentions highlighted and URLs clickable */
 function MentionText({ content, isOwn }: { content: string; isOwn: boolean }) {
-  const parts = content.split(/(@\w+)/g);
+  // Split on both @mentions and URLs
+  const parts = content.split(/(@\w+|https?:\/\/[^\s]+)/g);
   if (parts.length === 1) return <>{content}</>;
 
   return (
@@ -599,6 +629,20 @@ function MentionText({ content, isOwn }: { content: string; isOwn: boolean }) {
             >
               {part}
             </span>
+          );
+        }
+        if (/^https?:\/\//.test(part)) {
+          return (
+            <a
+              key={i}
+              href={part}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="underline opacity-80"
+            >
+              {part}
+            </a>
           );
         }
         return <React.Fragment key={i}>{part}</React.Fragment>;

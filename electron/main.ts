@@ -10,6 +10,25 @@ const PROTOCOL = "pals";
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 
+function getAppBaseUrl() {
+  return isDev ? DEV_URL : PROD_URL;
+}
+
+function sanitizeInAppPath(rawPath?: string): string {
+  if (typeof rawPath !== "string") return "/";
+  if (!rawPath.startsWith("/") || rawPath.startsWith("//")) return "/";
+  return rawPath;
+}
+
+function canOpenExternalUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 // ── Custom Protocol for OAuth ────────────────────────────────
 
 // Register as default handler for pals:// links
@@ -49,7 +68,7 @@ function handleProtocolUrl(rawUrl: string) {
     if (!isAuthCallback || !mainWindow) return;
 
     const code = url.searchParams.get("code");
-    const appBaseUrl = isDev ? DEV_URL : PROD_URL;
+    const appBaseUrl = getAppBaseUrl();
 
     if (code) {
       mainWindow.loadURL(`${appBaseUrl}/auth/callback?code=${encodeURIComponent(code)}`);
@@ -99,12 +118,12 @@ function createWindow() {
   });
 
   // Load app
-  const url = isDev ? DEV_URL : PROD_URL;
+  const url = getAppBaseUrl();
   mainWindow.loadURL(url);
 
   // Open external links in system browser (NOT Google OAuth in-app)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("http")) {
+    if (canOpenExternalUrl(url)) {
       shell.openExternal(url);
     }
     return { action: "deny" };
@@ -112,7 +131,7 @@ function createWindow() {
 
   // Handle navigation to external URLs — let Google OAuth through system browser
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    const appUrl = isDev ? DEV_URL : PROD_URL;
+    const appUrl = getAppBaseUrl();
     // Allow navigation within the app
     if (url.startsWith(appUrl) || url.startsWith("http://localhost")) return;
     // Allow Supabase auth URLs to load within the window
@@ -269,7 +288,7 @@ function setupIPC() {
       if (mainWindow) {
         mainWindow.focus();
         if (data.url) {
-          mainWindow.webContents.executeJavaScript(`window.location.href='${data.url}'`);
+          mainWindow.loadURL(`${getAppBaseUrl()}${sanitizeInAppPath(data.url)}`);
         }
       }
     });
@@ -287,7 +306,9 @@ function setupIPC() {
 
   // Open URL in system browser (for OAuth)
   ipcMain.on("open-external", (_event, url: string) => {
-    shell.openExternal(url);
+    if (canOpenExternalUrl(url)) {
+      shell.openExternal(url);
+    }
   });
 }
 

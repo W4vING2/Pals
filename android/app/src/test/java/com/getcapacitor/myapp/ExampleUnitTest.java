@@ -1,4 +1,4 @@
-package com.getcapacitor.myapp;
+package com.waving.pals;
 
 import static org.junit.Assert.*;
 
