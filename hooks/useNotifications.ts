@@ -2,46 +2,103 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
-import { useAuthStore, useNotificationStore } from "@/lib/store";
+import {
+  CACHE_TTL,
+  useAppDataStore,
+  useAuthStore,
+  useNotificationStore,
+} from "@/lib/store";
+import { dedupeRequest, getCachedQuery, isCacheFresh, setCachedQuery } from "@/lib/cache";
 import type { Notification } from "@/lib/supabase";
+
+const NOTIFICATIONS_CACHE_KEY = "notifications";
 
 export function useNotifications() {
   const { user } = useAuthStore();
   const { setUnreadCount, incrementUnread } = useNotificationStore();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(false);
+  const notifications = useAppDataStore((s) => s.notifications);
+  const notificationsLoadedAt = useAppDataStore((s) => s.notificationsLoadedAt);
+  const setCachedNotifications = useAppDataStore((s) => s.setNotifications);
+  const upsertNotification = useAppDataStore((s) => s.upsertNotification);
+  const markCachedNotificationRead = useAppDataStore((s) => s.markNotificationRead);
+  const markAllCachedNotificationsRead = useAppDataStore((s) => s.markAllNotificationsRead);
+  const [loading, setLoading] = useState(notifications.length === 0);
 
-  const loadNotifications = useCallback(async () => {
+  const persistNotifications = useCallback((items: Notification[]) => {
     if (!user) return;
-    setLoading(true);
+    void setCachedQuery(
+      user.id,
+      NOTIFICATIONS_CACHE_KEY,
+      items,
+      CACHE_TTL.notifications
+    );
+  }, [user]);
+
+  const loadNotifications = useCallback(async (force = false) => {
+    if (!user) return;
+
+    const memoryFresh = Date.now() - notificationsLoadedAt < CACHE_TTL.notifications;
+    if (!force && notificationsLoadedAt > 0 && memoryFresh) {
+      setLoading(false);
+      return;
+    }
+
+    if (!force && notificationsLoadedAt === 0) {
+      const cached = await getCachedQuery<Notification[]>(
+        user.id,
+        NOTIFICATIONS_CACHE_KEY
+      );
+      if (cached?.value) {
+        setCachedNotifications(cached.value, cached.updated_at);
+        setUnreadCount(cached.value.filter((n) => !n.is_read).length);
+        setLoading(false);
+        if (isCacheFresh(cached)) return;
+      }
+    }
+
+    if (notifications.length === 0 && notificationsLoadedAt === 0) setLoading(true);
     const supabase = getSupabaseBrowserClient();
 
-    const { data, error } = await supabase
-      .from("notifications")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(50);
+    const enriched = await dedupeRequest(
+      `${user.id}:${NOTIFICATIONS_CACHE_KEY}`,
+      async () => {
+        const { data, error } = await supabase
+          .from("notifications")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(50);
 
-    if (!error && data) {
-      // Enrich with actor profiles separately
-      const notifs = data as Notification[];
-      const actorIds = [...new Set(notifs.map((n) => n.actor_id))];
-      const { data: profilesData } = await supabase
-        .from("profiles")
-        .select("*")
-        .in("id", actorIds);
-      const profilesMap = new Map((profilesData ?? []).map((p) => [p.id, p]));
-      const enriched: Notification[] = notifs.map((n) => ({
-        ...n,
-        profiles: profilesMap.get(n.actor_id) as Notification["profiles"],
-      }));
-      setNotifications(enriched);
+        if (error || !data) return null;
+
+        const notifs = data as Notification[];
+        const actorIds = [...new Set(notifs.map((n) => n.actor_id))];
+        const { data: profilesData } = actorIds.length > 0
+          ? await supabase.from("profiles").select("*").in("id", actorIds)
+          : { data: [] };
+        const profilesMap = new Map((profilesData ?? []).map((p) => [p.id, p]));
+        return notifs.map((n) => ({
+          ...n,
+          profiles: profilesMap.get(n.actor_id) as Notification["profiles"],
+        }));
+      }
+    );
+
+    if (enriched) {
+      setCachedNotifications(enriched);
       const unread = enriched.filter((n) => !n.is_read).length;
       setUnreadCount(unread);
+      persistNotifications(enriched);
     }
     setLoading(false);
-  }, [user, setUnreadCount]);
+  }, [
+    notifications,
+    notificationsLoadedAt,
+    persistNotifications,
+    setCachedNotifications,
+    setUnreadCount,
+    user,
+  ]);
 
   const markAsRead = useCallback(
     async (notificationId: string) => {
@@ -51,15 +108,14 @@ export function useNotifications() {
         .update({ is_read: true })
         .eq("id", notificationId);
 
-      setNotifications((prev) => {
-        const next = prev.map((n) =>
-          n.id === notificationId ? { ...n, is_read: true } : n
-        );
-        setUnreadCount(next.filter((n) => !n.is_read).length);
-        return next;
-      });
+      markCachedNotificationRead(notificationId);
+      const next = notifications.map((n) =>
+        n.id === notificationId ? { ...n, is_read: true } : n
+      );
+      setUnreadCount(next.filter((n) => !n.is_read).length);
+      persistNotifications(next);
     },
-    [setUnreadCount]
+    [markCachedNotificationRead, notifications, persistNotifications, setUnreadCount]
   );
 
   const markAllAsRead = useCallback(async () => {
@@ -71,9 +127,10 @@ export function useNotifications() {
       .eq("user_id", user.id)
       .eq("is_read", false);
 
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    markAllCachedNotificationsRead();
+    persistNotifications(notifications.map((n) => ({ ...n, is_read: true })));
     setUnreadCount(0);
-  }, [user, setUnreadCount]);
+  }, [markAllCachedNotificationsRead, notifications, persistNotifications, user, setUnreadCount]);
 
   // Subscribe to real-time notifications
   useEffect(() => {
@@ -105,7 +162,12 @@ export function useNotifications() {
             profiles: (profile ?? undefined) as Notification["profiles"],
           };
 
-          setNotifications((prev) => [enriched, ...prev]);
+          upsertNotification(enriched);
+          const current = useAppDataStore.getState().notifications;
+          persistNotifications([
+            enriched,
+            ...current.filter((item) => item.id !== enriched.id),
+          ]);
           incrementUnread();
         }
       )
@@ -114,7 +176,7 @@ export function useNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, incrementUnread]);
+  }, [incrementUnread, persistNotifications, upsertNotification, user]);
 
   useEffect(() => {
     if (user) {

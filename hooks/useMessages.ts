@@ -3,9 +3,24 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Conversation, Message, MessageReaction, ConversationParticipant, ProfileSummary, Profile } from "@/lib/supabase";
-import { useAuthStore, useUnreadMessagesStore } from "@/lib/store";
+import {
+  CACHE_TTL,
+  useAppDataStore,
+  useAuthStore,
+  useUnreadMessagesStore,
+} from "@/lib/store";
 import { sendPushNotification } from "@/lib/sendPushNotification";
-import { safeCache, cacheConversations, getCachedConversations, cacheMessages, getCachedMessages } from "@/lib/cache";
+import {
+  cacheConversations,
+  cacheMessages,
+  dedupeRequest,
+  getCachedConversations,
+  getCachedMessages,
+  getCachedQuery,
+  isCacheFresh,
+  safeCache,
+  setCachedQuery,
+} from "@/lib/cache";
 import {
   getOrCreateKeyPair,
   getConversationKey,
@@ -22,12 +37,23 @@ export type ConversationWithDetails = Conversation & {
   unread_count: number;
 };
 
+const CONVERSATIONS_CACHE_KEY = "messages:conversations";
+const messagesCacheKey = (conversationId: string) => `messages:${conversationId}`;
+
 export function useMessages() {
   const { user, profile: storeProfile } = useAuthStore();
-  const [conversations, setConversations] = useState<ConversationWithDetails[]>([]);
+  const cachedConversations = useAppDataStore((s) => s.conversations);
+  const conversationsLoadedAt = useAppDataStore((s) => s.conversationsLoadedAt);
+  const cachedMessagesByConversation = useAppDataStore((s) => s.messagesByConversation);
+  const messagesLoadedAt = useAppDataStore((s) => s.messagesLoadedAt);
+  const setCachedConversations = useAppDataStore((s) => s.setConversations);
+  const patchCachedConversation = useAppDataStore((s) => s.patchConversation);
+  const removeCachedConversation = useAppDataStore((s) => s.removeConversation);
+  const setCachedMessagesForConversation = useAppDataStore((s) => s.setMessagesForConversation);
+  const [conversations, setConversations] = useState<ConversationWithDetails[]>(cachedConversations);
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [loadingConversations, setLoadingConversations] = useState(false);
+  const [loadingConversations, setLoadingConversations] = useState(cachedConversations.length === 0);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const channelRef = useRef<ReturnType<ReturnType<typeof getSupabaseBrowserClient>["channel"]> | null>(null);
   const reactionsChannelRef = useRef<ReturnType<ReturnType<typeof getSupabaseBrowserClient>["channel"]> | null>(null);
@@ -37,6 +63,25 @@ export function useMessages() {
   const activeConvIdRef = useRef(activeConversationId);
   activeConvIdRef.current = activeConversationId;
   const hasLoadedConvsRef = useRef(false);
+
+  useEffect(() => {
+    if (cachedConversations.length > 0) {
+      setConversations(cachedConversations);
+      setLoadingConversations(false);
+      hasLoadedConvsRef.current = true;
+    }
+  }, [cachedConversations]);
+
+  useEffect(() => {
+    if (!user || !activeConversationId) return;
+    setCachedMessagesForConversation(activeConversationId, messages);
+    void setCachedQuery(
+      user.id,
+      messagesCacheKey(activeConversationId),
+      messages,
+      CACHE_TTL.messages
+    );
+  }, [activeConversationId, messages, setCachedMessagesForConversation, user]);
 
   // ── E2E encryption setup ─────────────────────────────────
   const encKeyRef = useRef<CryptoKey | null>(null);
@@ -118,78 +163,121 @@ export function useMessages() {
     }
   }, [user]);
 
-  const loadConversations = useCallback(async () => {
+  const loadConversations = useCallback(async (force = false) => {
     if (!user) return;
     const isFirstLoad = !hasLoadedConvsRef.current;
-    if (isFirstLoad) {
-      // Hydrate from IndexedDB cache immediately so UI shows something while fetching
-      const cached = await safeCache(getCachedConversations, []);
-      if (cached.length > 0) setConversations(cached as ConversationWithDetails[]);
+    const memoryFresh = Date.now() - conversationsLoadedAt < CACHE_TTL.conversations;
+
+    if (!force && conversationsLoadedAt > 0 && memoryFresh) {
+      hasLoadedConvsRef.current = true;
+      setLoadingConversations(false);
+      return;
+    }
+
+    if (!force && isFirstLoad) {
+      const cached = await getCachedQuery<ConversationWithDetails[]>(
+        user.id,
+        CONVERSATIONS_CACHE_KEY
+      );
+      if (cached?.value) {
+        setConversations(cached.value);
+        setCachedConversations(cached.value, cached.updated_at);
+        setLoadingConversations(false);
+        hasLoadedConvsRef.current = true;
+        if (isCacheFresh(cached)) return;
+      } else {
+        const legacyCached = await safeCache(getCachedConversations, []);
+        if (legacyCached.length > 0) {
+          setConversations(legacyCached as ConversationWithDetails[]);
+          setCachedConversations(legacyCached as ConversationWithDetails[]);
+          setLoadingConversations(false);
+        } else {
+          setLoadingConversations(true);
+        }
+      }
+    } else if (conversations.length === 0) {
       setLoadingConversations(true);
     }
     const supabase = getSupabaseBrowserClient();
 
     try {
-      const { data: rawData, error } = await supabase
-        .from("conversation_participants")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+      const result = await dedupeRequest(`${user.id}:${CONVERSATIONS_CACHE_KEY}`, async () => {
+        const { data: rawData, error } = await supabase
+          .from("conversation_participants")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
 
-      if (!error && rawData) {
+        if (error || !rawData) return null;
+
         const participantsData = rawData as ConversationParticipant[];
-        if (participantsData.length === 0) {
-          setConversations([]);
-        } else {
-          const conversationIds = participantsData.map((p) => p.conversation_id);
+        if (participantsData.length === 0) return [];
 
-          const [convResult, allPartResult] = await Promise.all([
-            supabase.from("conversations").select("*").in("id", conversationIds),
-            supabase.from("conversation_participants").select("*").in("conversation_id", conversationIds),
-          ]);
+        const conversationIds = participantsData.map((p) => p.conversation_id);
 
-          const convData = convResult.data;
-          const allParticipantsList = (allPartResult.data ?? []) as ConversationParticipant[];
-          const userIds = [...new Set(allParticipantsList.map((p) => p.user_id))];
+        const [convResult, allPartResult] = await Promise.all([
+          supabase.from("conversations").select("*").in("id", conversationIds),
+          supabase.from("conversation_participants").select("*").in("conversation_id", conversationIds),
+        ]);
 
-          const { data: profilesData } = await supabase
-            .from("profiles")
-            .select("id, username, display_name, avatar_url, is_online")
-            .in("id", userIds);
+        const convData = convResult.data;
+        const allParticipantsList = (allPartResult.data ?? []) as ConversationParticipant[];
+        const userIds = [...new Set(allParticipantsList.map((p) => p.user_id))];
 
-          const profilesMap = new Map(
-            (profilesData ?? []).map((p) => [p.id, p as { id: string; username: string; display_name: string | null; avatar_url: string | null; is_online: boolean }])
-          );
+        const { data: profilesData } = userIds.length > 0
+          ? await supabase
+              .from("profiles")
+              .select("id, username, display_name, avatar_url, is_online")
+              .in("id", userIds)
+          : { data: [] };
 
-          const myParticipationMap = new Map(
-            participantsData.map((p) => [p.conversation_id, p])
-          );
+        const profilesMap = new Map(
+          (profilesData ?? []).map((p) => [p.id, p as ProfileSummary])
+        );
 
-          const result: ConversationWithDetails[] = (convData ?? []).map((conv) => {
-            const participants = allParticipantsList
-              .filter((p) => p.conversation_id === conv.id)
-              .map((p) => ({
-                ...p,
-                profiles: profilesMap.get(p.user_id) ?? { id: p.user_id, username: "unknown", display_name: null, avatar_url: null },
-              }));
-            const myParticipation = myParticipationMap.get(conv.id);
-            return {
-              ...(conv as Conversation),
-              participants,
-              unread_count: myParticipation?.unread_count ?? 0,
-            };
-          });
+        const myParticipationMap = new Map(
+          participantsData.map((p) => [p.conversation_id, p])
+        );
 
-          result.sort((a, b) => {
-            const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : new Date(a.created_at).getTime();
-            const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : new Date(b.created_at).getTime();
-            return bTime - aTime;
-          });
+        const nextConversations: ConversationWithDetails[] = (convData ?? []).map((conv) => {
+          const participants = allParticipantsList
+            .filter((p) => p.conversation_id === conv.id)
+            .map((p) => ({
+              ...p,
+              profiles: profilesMap.get(p.user_id) ?? {
+                id: p.user_id,
+                username: "unknown",
+                display_name: null,
+                avatar_url: null,
+              },
+            }));
+          const myParticipation = myParticipationMap.get(conv.id);
+          return {
+            ...(conv as Conversation),
+            participants,
+            unread_count: myParticipation?.unread_count ?? 0,
+          };
+        });
 
-          setConversations(result);
-          // Persist to IndexedDB for offline access
-          safeCache(() => cacheConversations(result), undefined);
-        }
+        nextConversations.sort((a, b) => {
+          const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : new Date(a.created_at).getTime();
+          const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : new Date(b.created_at).getTime();
+          return bTime - aTime;
+        });
+
+        return nextConversations;
+      });
+
+      if (result) {
+        setConversations(result);
+        setCachedConversations(result);
+        safeCache(() => cacheConversations(result), undefined);
+        void setCachedQuery(
+          user.id,
+          CONVERSATIONS_CACHE_KEY,
+          result,
+          CACHE_TTL.conversations
+        );
       }
     } catch (err) {
       console.warn("loadConversations failed:", err);
@@ -197,7 +285,12 @@ export function useMessages() {
     // ALWAYS cleanup — never leave skeleton stuck
     hasLoadedConvsRef.current = true;
     setLoadingConversations(false);
-  }, [user]);
+  }, [
+    conversations.length,
+    conversationsLoadedAt,
+    setCachedConversations,
+    user,
+  ]);
 
   // Helper: load reactions for a set of message IDs
   const loadReactionsForMessages = useCallback(async (messageIds: string[]): Promise<Map<string, MessageReaction[]>> => {
@@ -217,51 +310,100 @@ export function useMessages() {
   }, []);
 
   const loadMessages = useCallback(async (conversationId: string, options?: { silent?: boolean }) => {
+    const cachedMessages = cachedMessagesByConversation[conversationId] ?? [];
+    const messageLoadedAt = messagesLoadedAt[conversationId] ?? 0;
+    const memoryFresh = Date.now() - messageLoadedAt < CACHE_TTL.messages;
+    let hydratedMessages = false;
+
     if (!options?.silent) {
-      // Show cached messages immediately
-      const cached = await safeCache(() => getCachedMessages(conversationId), []);
-      if (cached.length > 0) setMessages(cached as Message[]);
-      setLoadingMessages(true);
+      if (messageLoadedAt > 0 && memoryFresh) {
+        setMessages(cachedMessages);
+        setLoadingMessages(false);
+        setActiveConversationId(conversationId);
+        return;
+      }
+      if (cachedMessages.length > 0) {
+        setMessages(cachedMessages);
+        setLoadingMessages(false);
+        hydratedMessages = true;
+      } else if (user) {
+        const cached = await getCachedQuery<Message[]>(
+          user.id,
+          messagesCacheKey(conversationId)
+        );
+        if (cached?.value) {
+          setMessages(cached.value);
+          setCachedMessagesForConversation(conversationId, cached.value, cached.updated_at);
+          setLoadingMessages(false);
+          hydratedMessages = true;
+          if (isCacheFresh(cached)) {
+            setActiveConversationId(conversationId);
+            return;
+          }
+        } else {
+          const legacyCached = await safeCache(() => getCachedMessages(conversationId), []);
+          if (legacyCached.length > 0) {
+            setMessages(legacyCached as Message[]);
+            setCachedMessagesForConversation(conversationId, legacyCached as Message[]);
+            setLoadingMessages(false);
+            hydratedMessages = true;
+          } else {
+            setLoadingMessages(true);
+          }
+        }
+      } else {
+        setLoadingMessages(true);
+      }
     }
+    if (!options?.silent && !hydratedMessages) setMessages([]);
     setActiveConversationId(conversationId);
     const supabase = getSupabaseBrowserClient();
 
     try {
-      const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true });
+      const enriched = await dedupeRequest(`${user?.id ?? "anon"}:${messagesCacheKey(conversationId)}`, async () => {
+        const { data, error } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", conversationId)
+          .order("created_at", { ascending: true });
 
-      if (!error && data) {
+        if (error || !data) return null;
         const msgs = data as Message[];
-        if (msgs.length === 0) {
-          setMessages([]);
-        } else {
-          const senderIds = [...new Set(msgs.map((m) => m.sender_id))];
-          const msgIds = msgs.map((m) => m.id);
+        if (msgs.length === 0) return [];
 
-          const [profilesResult, reactionsMap] = await Promise.all([
-            supabase
-              .from("profiles")
-              .select("id, username, display_name, avatar_url, is_online")
-              .in("id", senderIds),
-            loadReactionsForMessages(msgIds),
-          ]);
+        const senderIds = [...new Set(msgs.map((m) => m.sender_id))];
+        const msgIds = msgs.map((m) => m.id);
 
-          const profilesMap = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
-          let enriched: Message[] = msgs.map((m) => ({
-            ...m,
-            profiles: profilesMap.get(m.sender_id) as Message["profiles"],
-            reactions: reactionsMap.get(m.id) ?? [],
-          }));
+        const [profilesResult, reactionsMap] = await Promise.all([
+          supabase
+            .from("profiles")
+            .select("id, username, display_name, avatar_url, is_online")
+            .in("id", senderIds),
+          loadReactionsForMessages(msgIds),
+        ]);
 
-          // Decrypt E2E encrypted messages
-          enriched = await decryptMessages(enriched, conversationId);
+        const profilesMap = new Map((profilesResult.data ?? []).map((p) => [p.id, p]));
+        let nextMessages: Message[] = msgs.map((m) => ({
+          ...m,
+          profiles: profilesMap.get(m.sender_id) as Message["profiles"],
+          reactions: reactionsMap.get(m.id) ?? [],
+        }));
 
-          setMessages(enriched);
-          // Persist to IndexedDB
-          safeCache(() => cacheMessages(conversationId, enriched), undefined);
+        nextMessages = await decryptMessages(nextMessages, conversationId);
+        return nextMessages;
+      });
+
+      if (enriched) {
+        setMessages(enriched);
+        setCachedMessagesForConversation(conversationId, enriched);
+        safeCache(() => cacheMessages(conversationId, enriched), undefined);
+        if (user) {
+          void setCachedQuery(
+            user.id,
+            messagesCacheKey(conversationId),
+            enriched,
+            CACHE_TTL.messages
+          );
         }
       }
     } catch (err) {
@@ -280,7 +422,15 @@ export function useMessages() {
         supabase.rpc("mark_messages_read", { p_conversation_id: conversationId }),
       ]).then(() => refreshBadgeCount()).catch(() => { /* ignore */ });
     }
-  }, [user, loadReactionsForMessages, refreshBadgeCount]);
+  }, [
+    cachedMessagesByConversation,
+    decryptMessages,
+    loadReactionsForMessages,
+    messagesLoadedAt,
+    refreshBadgeCount,
+    setCachedMessagesForConversation,
+    user,
+  ]);
 
   const sendMessage = useCallback(
     async (
@@ -629,12 +779,13 @@ export function useMessages() {
       }
 
       setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+      removeCachedConversation(conversationId);
       if (activeConversationId === conversationId) {
         setActiveConversationId(null);
         setMessages([]);
       }
     },
-    [user, activeConversationId]
+    [activeConversationId, removeCachedConversation, user]
   );
 
   const getOrCreateConversation = useCallback(
@@ -917,7 +1068,7 @@ export function useMessages() {
 
     const debouncedReload = () => {
       if (convDebounceRef.current) clearTimeout(convDebounceRef.current);
-      convDebounceRef.current = setTimeout(() => loadConversations(), 500);
+      convDebounceRef.current = setTimeout(() => loadConversations(true), 500);
     };
 
     const channel = supabase
@@ -991,7 +1142,7 @@ export function useMessages() {
 
         if (cancelled) return;
 
-        loadConversations();
+        loadConversations(true);
         const convId = activeConvIdRef.current;
         if (convId) {
           loadMessages(convId, { silent: true });
@@ -1020,8 +1171,12 @@ export function useMessages() {
       setConversations((prev) =>
         prev.map((c) => (c.id === conversationId ? { ...c, pinned_message_id: messageId } : c))
       );
+      patchCachedConversation(conversationId, (conversation) => ({
+        ...conversation,
+        pinned_message_id: messageId,
+      }));
     },
-    []
+    [patchCachedConversation]
   );
 
   const unpinMessage = useCallback(
@@ -1034,8 +1189,12 @@ export function useMessages() {
       setConversations((prev) =>
         prev.map((c) => (c.id === conversationId ? { ...c, pinned_message_id: null } : c))
       );
+      patchCachedConversation(conversationId, (conversation) => ({
+        ...conversation,
+        pinned_message_id: null,
+      }));
     },
-    []
+    [patchCachedConversation]
   );
 
   // ── Forward message to other conversations ───────────────────
@@ -1101,8 +1260,12 @@ export function useMessages() {
           c.id === conversationId ? { ...c, disappear_after: seconds } : c
         )
       );
+      patchCachedConversation(conversationId, (conversation) => ({
+        ...conversation,
+        disappear_after: seconds,
+      }));
     },
-    []
+    [patchCachedConversation]
   );
 
   // ── Mute / unmute a conversation ─────────────────────────────
@@ -1120,7 +1283,15 @@ export function useMessages() {
         : c
       )
     );
-  }, [user]);
+    patchCachedConversation(conversationId, (conversation) => ({
+      ...conversation,
+      participants: conversation.participants.map((participant) =>
+        participant.user_id === user.id
+          ? { ...participant, is_muted: muted }
+          : participant
+      ),
+    }));
+  }, [patchCachedConversation, user]);
 
   // ── Auto-clean expired messages every 5 seconds ──────────────
   useEffect(() => {

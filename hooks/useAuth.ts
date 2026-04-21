@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
-import { useAuthStore } from "@/lib/store";
+import { useAppDataStore, useAuthStore } from "@/lib/store";
+import { clearUserCache } from "@/lib/cache";
 import type { Profile } from "@/lib/supabase";
 
 // Global flag: auth listener is initialized only once across all hook instances
@@ -93,6 +94,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 export function useAuth() {
   const { user, profile, setUser, setProfile, signOut: storeSignOut } = useAuthStore();
+  const clearAppData = useAppDataStore((s) => s.clearAll);
   const [loading, setLoading] = useState(!user); // already loaded if user in store
 
   useEffect(() => {
@@ -134,6 +136,9 @@ export function useAuth() {
 
         // SIGNED_OUT event — clean up
         if (event === "SIGNED_OUT") {
+          const previousUserId = useAuthStore.getState().user?.id;
+          if (previousUserId) void clearUserCache(previousUserId);
+          clearAppData();
           setUser(null);
           setProfile(null);
           setLoading(false);
@@ -171,7 +176,10 @@ export function useAuth() {
 
   const signOut = async () => {
     const supabase = getSupabaseBrowserClient();
+    const previousUserId = user?.id;
     await supabase.auth.signOut();
+    if (previousUserId) void clearUserCache(previousUserId);
+    clearAppData();
     storeSignOut();
     globalThis.__authInitialized = false;
   };

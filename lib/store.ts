@@ -1,6 +1,43 @@
 import { create } from "zustand";
 import type { User } from "@supabase/supabase-js";
-import type { Profile } from "./supabase";
+import type {
+  Conversation,
+  ConversationParticipant,
+  Message,
+  Notification,
+  Post,
+  Profile,
+  ProfileSummary,
+  Story,
+} from "./supabase";
+
+export const CACHE_TTL = {
+  feed: 60_000,
+  conversations: 45_000,
+  messages: 45_000,
+  notifications: 60_000,
+  profile: 180_000,
+  stories: 180_000,
+  blockedUsers: 180_000,
+} as const;
+
+export type CachedConversation = Conversation & {
+  participants: Array<ConversationParticipant & { profiles: ProfileSummary }>;
+  unread_count: number;
+};
+
+export type CachedStoryGroup = {
+  userId: string;
+  profile: Profile;
+  stories: Array<Story & { profiles: Profile }>;
+  hasUnseen: boolean;
+};
+
+export type ProfileCacheEntry = {
+  profile: Profile | null;
+  posts: Post[];
+  loadedAt: number;
+};
 
 function readStorage<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
@@ -161,6 +198,192 @@ type MessagesStoreState = {
 export const useMessagesStore = create<MessagesStoreState>((set) => ({
   pendingConversationId: null,
   setPendingConversationId: (id) => set({ pendingConversationId: id }),
+}));
+
+// ── App Data Cache Store ────────────────────────────────────
+
+type AppDataState = {
+  followingPosts: Post[];
+  trendingPosts: Post[];
+  recommendedUsers: Profile[];
+  likedPostIds: string[];
+  feedLoadedAt: number;
+  trendingLoadedAt: number;
+  conversations: CachedConversation[];
+  conversationsLoadedAt: number;
+  messagesByConversation: Record<string, Message[]>;
+  messagesLoadedAt: Record<string, number>;
+  notifications: Notification[];
+  notificationsLoadedAt: number;
+  profilesByUsername: Record<string, ProfileCacheEntry>;
+  storyGroups: CachedStoryGroup[];
+  ownStoryProfile: Profile | null;
+  viewedStoryIds: string[];
+  storiesLoadedAt: number;
+  blockedIds: string[];
+  blockedLoadedAt: number;
+  refreshingKeys: Record<string, boolean>;
+  setFollowingPosts: (posts: Post[], loadedAt?: number) => void;
+  setTrendingData: (posts: Post[], users: Profile[], loadedAt?: number) => void;
+  setLikedPostIds: (ids: Iterable<string>, merge?: boolean) => void;
+  removeLikedPostId: (id: string) => void;
+  upsertFollowingPost: (post: Post) => void;
+  patchPostCounts: (post: Pick<Post, "id"> & Partial<Post>) => void;
+  removePost: (id: string) => void;
+  setConversations: (conversations: CachedConversation[], loadedAt?: number) => void;
+  patchConversation: (id: string, updater: (conversation: CachedConversation) => CachedConversation) => void;
+  removeConversation: (id: string) => void;
+  setMessagesForConversation: (conversationId: string, messages: Message[], loadedAt?: number) => void;
+  appendMessage: (conversationId: string, message: Message) => void;
+  updateMessage: (conversationId: string, messageId: string, updater: (message: Message) => Message) => void;
+  removeMessage: (conversationId: string, messageId: string) => void;
+  setNotifications: (notifications: Notification[], loadedAt?: number) => void;
+  upsertNotification: (notification: Notification) => void;
+  markNotificationRead: (id: string) => void;
+  markAllNotificationsRead: () => void;
+  setProfileCache: (username: string, entry: ProfileCacheEntry) => void;
+  setStories: (groups: CachedStoryGroup[], ownProfile: Profile | null, viewedIds: Iterable<string>, loadedAt?: number) => void;
+  setBlockedIds: (ids: Iterable<string>, loadedAt?: number) => void;
+  setRefreshing: (key: string, refreshing: boolean) => void;
+  clearAll: () => void;
+};
+
+const initialAppData = {
+  followingPosts: [],
+  trendingPosts: [],
+  recommendedUsers: [],
+  likedPostIds: [],
+  feedLoadedAt: 0,
+  trendingLoadedAt: 0,
+  conversations: [],
+  conversationsLoadedAt: 0,
+  messagesByConversation: {},
+  messagesLoadedAt: {},
+  notifications: [],
+  notificationsLoadedAt: 0,
+  profilesByUsername: {},
+  storyGroups: [],
+  ownStoryProfile: null,
+  viewedStoryIds: [],
+  storiesLoadedAt: 0,
+  blockedIds: [],
+  blockedLoadedAt: 0,
+  refreshingKeys: {},
+};
+
+export const useAppDataStore = create<AppDataState>((set) => ({
+  ...initialAppData,
+  setFollowingPosts: (followingPosts, loadedAt = Date.now()) =>
+    set({ followingPosts, feedLoadedAt: loadedAt }),
+  setTrendingData: (trendingPosts, recommendedUsers, loadedAt = Date.now()) =>
+    set({ trendingPosts, recommendedUsers, trendingLoadedAt: loadedAt }),
+  setLikedPostIds: (ids, merge = false) =>
+    set((state) => {
+      const next = new Set(merge ? state.likedPostIds : []);
+      for (const id of ids) next.add(id);
+      return { likedPostIds: [...next] };
+    }),
+  removeLikedPostId: (id) =>
+    set((state) => ({ likedPostIds: state.likedPostIds.filter((item) => item !== id) })),
+  upsertFollowingPost: (post) =>
+    set((state) => {
+      const exists = state.followingPosts.some((item) => item.id === post.id);
+      return {
+        followingPosts: exists
+          ? state.followingPosts.map((item) => (item.id === post.id ? { ...item, ...post } : item))
+          : [post, ...state.followingPosts],
+      };
+    }),
+  patchPostCounts: (post) =>
+    set((state) => ({
+      followingPosts: state.followingPosts.map((item) =>
+        item.id === post.id ? { ...item, ...post } : item
+      ),
+      trendingPosts: state.trendingPosts.map((item) =>
+        item.id === post.id ? { ...item, ...post } : item
+      ),
+    })),
+  removePost: (id) =>
+    set((state) => ({
+      followingPosts: state.followingPosts.filter((post) => post.id !== id),
+      trendingPosts: state.trendingPosts.filter((post) => post.id !== id),
+    })),
+  setConversations: (conversations, loadedAt = Date.now()) =>
+    set({ conversations, conversationsLoadedAt: loadedAt }),
+  patchConversation: (id, updater) =>
+    set((state) => ({
+      conversations: state.conversations.map((conversation) =>
+        conversation.id === id ? updater(conversation) : conversation
+      ),
+    })),
+  removeConversation: (id) =>
+    set((state) => ({ conversations: state.conversations.filter((c) => c.id !== id) })),
+  setMessagesForConversation: (conversationId, messages, loadedAt = Date.now()) =>
+    set((state) => ({
+      messagesByConversation: { ...state.messagesByConversation, [conversationId]: messages },
+      messagesLoadedAt: { ...state.messagesLoadedAt, [conversationId]: loadedAt },
+    })),
+  appendMessage: (conversationId, message) =>
+    set((state) => {
+      const current = state.messagesByConversation[conversationId] ?? [];
+      if (current.some((item) => item.id === message.id)) return state;
+      return {
+        messagesByConversation: {
+          ...state.messagesByConversation,
+          [conversationId]: [...current, message],
+        },
+      };
+    }),
+  updateMessage: (conversationId, messageId, updater) =>
+    set((state) => ({
+      messagesByConversation: {
+        ...state.messagesByConversation,
+        [conversationId]: (state.messagesByConversation[conversationId] ?? []).map((message) =>
+          message.id === messageId ? updater(message) : message
+        ),
+      },
+    })),
+  removeMessage: (conversationId, messageId) =>
+    set((state) => ({
+      messagesByConversation: {
+        ...state.messagesByConversation,
+        [conversationId]: (state.messagesByConversation[conversationId] ?? []).filter(
+          (message) => message.id !== messageId
+        ),
+      },
+    })),
+  setNotifications: (notifications, loadedAt = Date.now()) =>
+    set({ notifications, notificationsLoadedAt: loadedAt }),
+  upsertNotification: (notification) =>
+    set((state) => ({
+      notifications: [
+        notification,
+        ...state.notifications.filter((item) => item.id !== notification.id),
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+    })),
+  markNotificationRead: (id) =>
+    set((state) => ({
+      notifications: state.notifications.map((item) =>
+        item.id === id ? { ...item, is_read: true } : item
+      ),
+    })),
+  markAllNotificationsRead: () =>
+    set((state) => ({
+      notifications: state.notifications.map((item) => ({ ...item, is_read: true })),
+    })),
+  setProfileCache: (username, entry) =>
+    set((state) => ({
+      profilesByUsername: { ...state.profilesByUsername, [username]: entry },
+    })),
+  setStories: (storyGroups, ownStoryProfile, viewedIds, loadedAt = Date.now()) =>
+    set({ storyGroups, ownStoryProfile, viewedStoryIds: [...viewedIds], storiesLoadedAt: loadedAt }),
+  setBlockedIds: (ids, loadedAt = Date.now()) =>
+    set({ blockedIds: [...ids], blockedLoadedAt: loadedAt }),
+  setRefreshing: (key, refreshing) =>
+    set((state) => ({
+      refreshingKeys: { ...state.refreshingKeys, [key]: refreshing },
+    })),
+  clearAll: () => set({ ...initialAppData }),
 }));
 
 // ── Unread Messages Store ─────────────────────────────────

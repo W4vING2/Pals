@@ -5,13 +5,19 @@ import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/hooks/useMessages";
-import { useMessagesStore } from "@/lib/store";
+import {
+  CACHE_TTL,
+  useAppDataStore,
+  useMessagesStore,
+  type ProfileCacheEntry,
+} from "@/lib/store";
 import { ProfileHeader } from "@/components/profile/ProfileHeader";
 import { PostGrid } from "@/components/profile/PostGrid";
 import { PageTransition } from "@/components/layout/PageTransition";
 import { Skeleton } from "@/components/ui/Skeleton";
 import type { Profile, Post } from "@/lib/supabase";
 import { filterVisiblePosts } from "@/lib/postVisibility";
+import { dedupeRequest, getCachedQuery, isCacheFresh, setCachedQuery } from "@/lib/cache";
 
 interface ProfilePageProps {
   params: Promise<{ username: string }>;
@@ -53,10 +59,12 @@ export default function ProfilePage({ params }: ProfilePageProps) {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { getOrCreateConversation } = useMessages();
+  const profileCache = useAppDataStore((s) => s.profilesByUsername[username]);
+  const setProfileCache = useAppDataStore((s) => s.setProfileCache);
 
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [profile, setProfile] = useState<Profile | null>(profileCache?.profile ?? null);
+  const [posts, setPosts] = useState<Post[]>(profileCache?.posts ?? []);
+  const [loadingProfile, setLoadingProfile] = useState(!profileCache);
   const [loadingPosts, setLoadingPosts] = useState(false);
 
   useEffect(() => {
@@ -68,51 +76,81 @@ export default function ProfilePage({ params }: ProfilePageProps) {
   useEffect(() => {
     if (!username) return;
     const load = async () => {
-      setLoadingProfile(true);
+      const cacheKey = `profile:${username}`;
+      const memoryFresh =
+        !!profileCache && Date.now() - profileCache.loadedAt < CACHE_TTL.profile;
+
+      if (profileCache) {
+        setProfile(profileCache.profile);
+        setPosts(profileCache.posts);
+        setLoadingProfile(false);
+        setLoadingPosts(false);
+        if (memoryFresh) return;
+      } else if (user) {
+        const cached = await getCachedQuery<ProfileCacheEntry>(user.id, cacheKey);
+        if (cached?.value) {
+          setProfileCache(username, cached.value);
+          setProfile(cached.value.profile);
+          setPosts(cached.value.posts);
+          setLoadingProfile(false);
+          setLoadingPosts(false);
+          if (isCacheFresh(cached)) return;
+        } else {
+          setLoadingProfile(true);
+        }
+      }
+
       const supabase = getSupabaseBrowserClient();
 
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("username", username)
-        .single();
+      const next = await dedupeRequest(
+        `${user?.id ?? "anon"}:${cacheKey}`,
+        async (): Promise<ProfileCacheEntry> => {
+          const { data: profileData } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("username", username)
+            .single();
 
-      if (!profileData) {
-        setLoadingProfile(false);
-        return;
-      }
+          if (!profileData) {
+            return { profile: null, posts: [], loadedAt: Date.now() };
+          }
 
-      setProfile(profileData as Profile);
-      setLoadingProfile(false);
+          const { data: followData } = user
+            ? await supabase
+                .from("follows")
+                .select("following_id")
+                .eq("follower_id", user.id)
+            : { data: [] };
+          const followingIds = new Set(
+            followData?.map((item) => item.following_id) ?? []
+          );
+          if (user?.id) followingIds.add(user.id);
+          const { data: postsData } = await supabase
+            .from("posts")
+            .select("*, profiles:user_id (id, username, display_name, avatar_url)")
+            .eq("user_id", profileData.id)
+            .order("created_at", { ascending: false });
 
-      // Load posts
-      setLoadingPosts(true);
-      const { data: followData } = user
-        ? await supabase
-            .from("follows")
-            .select("following_id")
-            .eq("follower_id", user.id)
-        : { data: [] };
-      const followingIds = new Set(
-        followData?.map((item) => item.following_id) ?? []
+          return {
+            profile: profileData as Profile,
+            posts: postsData
+              ? filterVisiblePosts(postsData as Post[], user?.id, followingIds)
+              : [],
+            loadedAt: Date.now(),
+          };
+        }
       );
-      if (user?.id) followingIds.add(user.id);
-      const { data: postsData } = await supabase
-        .from("posts")
-        .select("*, profiles:user_id (id, username, display_name, avatar_url)")
-        .eq("user_id", profileData.id)
-        .order("created_at", { ascending: false });
 
-      if (postsData) {
-        setPosts(
-          filterVisiblePosts(postsData as Post[], user?.id, followingIds)
-        );
-      }
+      setProfile(next.profile);
+      setPosts(next.posts);
+      setProfileCache(username, next);
+      if (user) void setCachedQuery(user.id, cacheKey, next, CACHE_TTL.profile);
+      setLoadingProfile(false);
       setLoadingPosts(false);
     };
 
     load();
-  }, [username]);
+  }, [profileCache, setProfileCache, user, username]);
 
   const handleMessageClick = async () => {
     if (!profile || !user) return;
@@ -153,7 +191,14 @@ export default function ProfilePage({ params }: ProfilePageProps) {
           profile={profile}
           isOwnProfile={isOwn}
           onMessageClick={handleMessageClick}
-          onProfileUpdated={setProfile}
+          onProfileUpdated={(nextProfile) => {
+            setProfile(nextProfile);
+            setProfileCache(username, {
+              profile: nextProfile,
+              posts,
+              loadedAt: Date.now(),
+            });
+          }}
         />
 
         <div className="px-4 mt-4">

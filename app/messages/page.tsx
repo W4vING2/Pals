@@ -68,7 +68,7 @@ export default function MessagesPage() {
       processedRef.current = targetConvId;
       setMobileView("chat");
       // Load conversations first so activeConv resolves, then load messages
-      loadConversations().then(() => loadMessages(targetConvId));
+      loadConversations(true).then(() => loadMessages(targetConvId));
 
       // Clean up: remove from URL and store
       if (convIdFromUrl) {
@@ -233,7 +233,7 @@ export default function MessagesPage() {
       const conversationId = await getOrCreateConversation(profileId);
       if (!conversationId) return;
       processedRef.current = conversationId;
-      await loadConversations();
+      await loadConversations(true);
       await loadMessages(conversationId);
       setMobileView("chat");
       setSuggestions((prev) =>
@@ -275,7 +275,7 @@ export default function MessagesPage() {
   };
 
   const handleGroupCreated = (conversationId: string) => {
-    loadConversations().then(() => {
+    loadConversations(true).then(() => {
       loadMessages(conversationId);
       setMobileView("chat");
     });
@@ -403,7 +403,7 @@ export default function MessagesPage() {
           onClose={() => setGroupSettingsOpen(false)}
           conversation={activeConv}
           onUpdated={() => {
-            loadConversations().then(() => {
+            loadConversations(true).then(() => {
               // If user left the group, activeConv will be gone — go back to list
               const still = conversations.find((c) => c.id === activeConversationId);
               if (!still) {

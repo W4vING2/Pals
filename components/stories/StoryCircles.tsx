@@ -4,8 +4,9 @@ import React, { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Plus } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
-import { useAuthStore } from "@/lib/store";
+import { CACHE_TTL, useAppDataStore, useAuthStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { dedupeRequest, getCachedQuery, isCacheFresh, setCachedQuery } from "@/lib/cache";
 import type { Story, Profile } from "@/lib/supabase";
 
 type StoryWithProfile = Story & { profiles: Profile };
@@ -17,6 +18,14 @@ type GroupedStories = {
   hasUnseen: boolean;
 };
 
+type StoriesCacheValue = {
+  groups: GroupedStories[];
+  ownProfile: Profile | null;
+  viewedIds: string[];
+};
+
+const STORIES_CACHE_KEY = "stories";
+
 interface StoryCirclesProps {
   onOpenViewer: (userId: string, stories: Story[]) => void;
   onCreateStory: () => void;
@@ -24,74 +33,120 @@ interface StoryCirclesProps {
 
 export function StoryCircles({ onOpenViewer, onCreateStory }: StoryCirclesProps) {
   const { user } = useAuthStore();
-  const [groups, setGroups] = useState<GroupedStories[]>([]);
-  const [ownProfile, setOwnProfile] = useState<Profile | null>(null);
+  const cachedGroups = useAppDataStore((s) => s.storyGroups);
+  const cachedOwnProfile = useAppDataStore((s) => s.ownStoryProfile);
+  const cachedViewedStoryIds = useAppDataStore((s) => s.viewedStoryIds);
+  const storiesLoadedAt = useAppDataStore((s) => s.storiesLoadedAt);
+  const setCachedStories = useAppDataStore((s) => s.setStories);
+  const [groups, setGroups] = useState<GroupedStories[]>(cachedGroups);
+  const [ownProfile, setOwnProfile] = useState<Profile | null>(cachedOwnProfile);
   const [hasOwnStory, setHasOwnStory] = useState(false);
-  const [viewedStoryIds, setViewedStoryIds] = useState<Set<string>>(new Set());
+  const [viewedStoryIds, setViewedStoryIds] = useState<Set<string>>(
+    () => new Set(cachedViewedStoryIds)
+  );
 
-  const loadStories = useCallback(async () => {
+  useEffect(() => {
+    setGroups(cachedGroups);
+    setOwnProfile(cachedOwnProfile);
+    setViewedStoryIds(new Set(cachedViewedStoryIds));
+    if (user) setHasOwnStory(cachedGroups.some((group) => group.userId === user.id));
+  }, [cachedGroups, cachedOwnProfile, cachedViewedStoryIds, user]);
+
+  const loadStories = useCallback(async (force = false) => {
     if (!user) return;
+
+    const memoryFresh = Date.now() - storiesLoadedAt < CACHE_TTL.stories;
+    if (!force && storiesLoadedAt > 0 && memoryFresh) return;
+
+    if (!force && storiesLoadedAt === 0) {
+      const cached = await getCachedQuery<StoriesCacheValue>(user.id, STORIES_CACHE_KEY);
+      if (cached?.value) {
+        setCachedStories(
+          cached.value.groups,
+          cached.value.ownProfile,
+          cached.value.viewedIds,
+          cached.updated_at
+        );
+        setGroups(cached.value.groups);
+        setOwnProfile(cached.value.ownProfile);
+        setViewedStoryIds(new Set(cached.value.viewedIds));
+        setHasOwnStory(cached.value.groups.some((group) => group.userId === user.id));
+        if (isCacheFresh(cached)) return;
+      }
+    }
+
     const supabase = getSupabaseBrowserClient();
 
-    const { data: stories, error } = await supabase
-      .from("stories")
-      .select("*, profiles:user_id(id, username, display_name, avatar_url)")
-      .gt("expires_at", new Date().toISOString())
-      .order("created_at");
+    const result = await dedupeRequest(`${user.id}:${STORIES_CACHE_KEY}`, async () => {
+      const { data: stories, error } = await supabase
+        .from("stories")
+        .select("*, profiles:user_id(id, username, display_name, avatar_url)")
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at");
 
-    if (error || !stories) return;
+      if (error || !stories) return null;
 
-    // Load viewed story ids
-    const storyIds = stories.map((s: StoryWithProfile) => s.id);
-    if (storyIds.length > 0) {
-      const { data: views } = await supabase
-        .from("story_views")
-        .select("story_id")
-        .eq("viewer_id", user.id)
-        .in("story_id", storyIds);
+      const storyIds = stories.map((s: StoryWithProfile) => s.id);
+      const { data: views } = storyIds.length > 0
+        ? await supabase
+            .from("story_views")
+            .select("story_id")
+            .eq("viewer_id", user.id)
+            .in("story_id", storyIds)
+        : { data: [] };
 
-      if (views) {
-        setViewedStoryIds(new Set(views.map((v: { story_id: string }) => v.story_id)));
+      const nextViewedIds = views?.map((v: { story_id: string }) => v.story_id) ?? [];
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      const nextOwnProfile = (profile as Profile | null) ?? null;
+      const groupMap = new Map<string, GroupedStories>();
+
+      for (const story of stories as StoryWithProfile[]) {
+        const existing = groupMap.get(story.user_id);
+        if (existing) {
+          existing.stories.push(story);
+        } else {
+          groupMap.set(story.user_id, {
+            userId: story.user_id,
+            profile: story.profiles,
+            stories: [story],
+            hasUnseen: false,
+          });
+        }
       }
-    }
 
-    // Load own profile
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .maybeSingle();
+      const viewedSet = new Set(nextViewedIds);
+      const nextGroups = Array.from(groupMap.values()).map((group) => ({
+        ...group,
+        hasUnseen: group.stories.some((story) => !viewedSet.has(story.id)),
+      }));
 
-    if (profile) setOwnProfile(profile as Profile);
+      return {
+        groups: nextGroups,
+        ownProfile: nextOwnProfile,
+        viewedIds: nextViewedIds,
+      };
+    });
 
-    // Group by user
-    const groupMap = new Map<string, GroupedStories>();
+    if (!result) return;
 
-    for (const story of stories as StoryWithProfile[]) {
-      const existing = groupMap.get(story.user_id);
-      if (existing) {
-        existing.stories.push(story);
-      } else {
-        groupMap.set(story.user_id, {
-          userId: story.user_id,
-          profile: story.profiles,
-          stories: [story],
-          hasUnseen: false,
-        });
-      }
-    }
-
-    // Check unseen status (will be updated after viewedStoryIds is set)
-    const grouped = Array.from(groupMap.values());
-    setGroups(grouped);
-    setHasOwnStory(groupMap.has(user.id));
-  }, [user]);
+    setCachedStories(result.groups, result.ownProfile, result.viewedIds);
+    setGroups(result.groups);
+    setOwnProfile(result.ownProfile);
+    setViewedStoryIds(new Set(result.viewedIds));
+    setHasOwnStory(result.groups.some((group) => group.userId === user.id));
+    void setCachedQuery(user.id, STORIES_CACHE_KEY, result, CACHE_TTL.stories);
+  }, [cachedGroups, setCachedStories, storiesLoadedAt, user]);
 
   useEffect(() => {
     loadStories();
   }, [loadStories]);
 
-  // Update unseen status when viewedStoryIds changes
   useEffect(() => {
     setGroups((prev) =>
       prev.map((g) => ({
@@ -106,7 +161,6 @@ export function StoryCircles({ onOpenViewer, onCreateStory }: StoryCirclesProps)
   const ownGroup = groups.find((g) => g.userId === user.id);
   const otherGroups = groups.filter((g) => g.userId !== user.id);
 
-  // Sort: unseen first
   otherGroups.sort((a, b) => {
     if (a.hasUnseen && !b.hasUnseen) return -1;
     if (!a.hasUnseen && b.hasUnseen) return 1;
@@ -125,7 +179,6 @@ export function StoryCircles({ onOpenViewer, onCreateStory }: StoryCirclesProps)
   return (
     <div className="mb-4 -mx-4 px-4">
       <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-        {/* Own story circle */}
         <motion.button
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -176,7 +229,6 @@ export function StoryCircles({ onOpenViewer, onCreateStory }: StoryCirclesProps)
           </span>
         </motion.button>
 
-        {/* Other users' stories */}
         {otherGroups.map((group, i) => (
           <motion.button
             key={group.userId}

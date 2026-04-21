@@ -24,13 +24,23 @@ import { StoryViewer } from "@/components/stories/StoryViewer";
 import { AnimatedList } from "@/components/shared/AnimatedList";
 import { PostCard } from "@/components/feed/PostCard";
 import {
+  CACHE_TTL,
+  useAppDataStore,
   useAuthStore,
   useCreatePostStore,
   useFeedPreferencesStore,
   useQuickActionStore,
 } from "@/lib/store";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
-import { safeCache, cachePosts, getCachedPosts } from "@/lib/cache";
+import {
+  cachePosts,
+  dedupeRequest,
+  getCachedPosts,
+  getCachedQuery,
+  isCacheFresh,
+  safeCache,
+  setCachedQuery,
+} from "@/lib/cache";
 import type { Post, Profile, Story } from "@/lib/supabase";
 import { filterVisiblePosts } from "@/lib/postVisibility";
 
@@ -38,29 +48,59 @@ const PAGE_SIZE = 10;
 
 type FeedTab = "following" | "trending";
 
+type FollowingFeedCache = {
+  posts: Post[];
+  likedPostIds: string[];
+  cursor: string | null;
+  hasMore: boolean;
+};
+
+type TrendingFeedCache = {
+  posts: Post[];
+  recommendedUsers: Profile[];
+  followedIds: string[];
+};
+
+const FOLLOWING_FEED_CACHE_KEY = "feed:following";
+const TRENDING_FEED_CACHE_KEY = "feed:trending";
+
 export default function FeedPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { user: storeUser } = useAuthStore();
   const { blockedIds } = useBlockedUsers();
+  const cachedFollowingPosts = useAppDataStore((s) => s.followingPosts);
+  const cachedTrendingPosts = useAppDataStore((s) => s.trendingPosts);
+  const cachedRecommendedUsers = useAppDataStore((s) => s.recommendedUsers);
+  const cachedLikedPostIds = useAppDataStore((s) => s.likedPostIds);
+  const feedLoadedAt = useAppDataStore((s) => s.feedLoadedAt);
+  const trendingLoadedAt = useAppDataStore((s) => s.trendingLoadedAt);
+  const setCachedFollowingPosts = useAppDataStore((s) => s.setFollowingPosts);
+  const setCachedTrendingData = useAppDataStore((s) => s.setTrendingData);
+  const setCachedLikedPostIds = useAppDataStore((s) => s.setLikedPostIds);
+  const removeCachedLikedPostId = useAppDataStore((s) => s.removeLikedPostId);
+  const patchCachedPostCounts = useAppDataStore((s) => s.patchPostCounts);
+  const removeCachedPost = useAppDataStore((s) => s.removePost);
 
   // Tab state
   const [tab, setTab] = useState<FeedTab>("trending");
 
   // Following feed state
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [posts, setPosts] = useState<Post[]>(cachedFollowingPosts);
+  const [loading, setLoading] = useState(cachedFollowingPosts.length === 0);
   const [hasMore, setHasMore] = useState(true);
   const [newPostCount, setNewPostCount] = useState(0);
   const cursorRef = useRef<string | null>(null);
   const hasLoadedRef = useRef(false);
-  const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
+  const [likedPostIds, setLikedPostIds] = useState<Set<string>>(
+    () => new Set(cachedLikedPostIds)
+  );
 
   // Trending state
-  const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
-  const [trendingLoading, setTrendingLoading] = useState(false);
+  const [trendingPosts, setTrendingPosts] = useState<Post[]>(cachedTrendingPosts);
+  const [trendingLoading, setTrendingLoading] = useState(cachedTrendingPosts.length === 0);
   const hasTrendingRef = useRef(false);
-  const [recommendedUsers, setRecommendedUsers] = useState<Profile[]>([]);
+  const [recommendedUsers, setRecommendedUsers] = useState<Profile[]>(cachedRecommendedUsers);
   const [followed, setFollowed] = useState<Set<string>>(new Set());
 
   // Stories
@@ -72,52 +112,114 @@ export default function FeedPage() {
   const setCreateStoryOpen = useQuickActionStore((s) => s.setCreateStoryOpen);
   const storyRefreshKey = useQuickActionStore((s) => s.storyRefreshKey);
 
+  useEffect(() => {
+    if (cachedFollowingPosts.length > 0) {
+      setPosts(cachedFollowingPosts);
+      setLoading(false);
+    }
+  }, [cachedFollowingPosts]);
+
+  useEffect(() => {
+    if (cachedTrendingPosts.length > 0 || cachedRecommendedUsers.length > 0) {
+      setTrendingPosts(cachedTrendingPosts);
+      setRecommendedUsers(cachedRecommendedUsers);
+      setTrendingLoading(false);
+      hasTrendingRef.current = true;
+    }
+  }, [cachedRecommendedUsers, cachedTrendingPosts]);
+
+  useEffect(() => {
+    setLikedPostIds(new Set(cachedLikedPostIds));
+  }, [cachedLikedPostIds]);
+
   // ── Following feed ─────────────────────────────────────────
-  const loadPosts = useCallback(async (reset = false) => {
+  const loadPosts = useCallback(async (reset = false, force = false) => {
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
 
-    if (!hasLoadedRef.current) {
-      // Show cached posts immediately before network response
-      const cached = await safeCache(getCachedPosts, []);
-      if (cached.length > 0) {
-        setPosts(cached as Post[]);
+    if (reset && !force) {
+      const memoryFresh = Date.now() - feedLoadedAt < CACHE_TTL.feed;
+      if (feedLoadedAt > 0 && memoryFresh) {
+        hasLoadedRef.current = true;
+        setLoading(false);
+        return;
       }
+    }
+
+    if (reset && !force && !hasLoadedRef.current && user) {
+      const cached = await getCachedQuery<FollowingFeedCache>(
+        user.id,
+        FOLLOWING_FEED_CACHE_KEY
+      );
+      if (cached?.value) {
+        setPosts(cached.value.posts);
+        setCachedFollowingPosts(cached.value.posts, cached.updated_at);
+        setHasMore(cached.value.hasMore);
+        cursorRef.current = cached.value.cursor;
+        setLikedPostIds(new Set(cached.value.likedPostIds));
+        setCachedLikedPostIds(cached.value.likedPostIds);
+        setLoading(false);
+        hasLoadedRef.current = true;
+        if (isCacheFresh(cached)) return;
+      } else {
+        // Legacy fallback from the old cache store.
+        const cachedPosts = await safeCache(getCachedPosts, []);
+        if (cachedPosts.length > 0) {
+          setPosts(cachedPosts as Post[]);
+          setCachedFollowingPosts(cachedPosts as Post[]);
+          setLoading(false);
+        } else {
+          setLoading(true);
+        }
+      }
+    } else if (posts.length === 0) {
       setLoading(true);
     }
 
     try {
-      const followingResult = user
-        ? await supabase
-            .from("follows")
-            .select("following_id")
-            .eq("follower_id", user.id)
-        : { data: [] };
-      const followingIds = new Set(
-        followingResult.data?.map((row) => row.following_id) ?? []
+      const data = await dedupeRequest(
+        `${user?.id ?? "anon"}:${FOLLOWING_FEED_CACHE_KEY}:${reset ? "reset" : cursorRef.current ?? "next"}`,
+        async () => {
+          const followingResult = user
+            ? await supabase
+                .from("follows")
+                .select("following_id")
+                .eq("follower_id", user.id)
+            : { data: [] };
+          const followingIds = new Set(
+            followingResult.data?.map((row) => row.following_id) ?? []
+          );
+          if (user?.id) followingIds.add(user.id);
+
+          let query = supabase
+            .from("posts")
+            .select("*, profiles:user_id (id, username, display_name, avatar_url)")
+            .order("created_at", { ascending: false })
+            .limit(PAGE_SIZE);
+
+          if (!reset && cursorRef.current) {
+            query = query.lt("created_at", cursorRef.current);
+          }
+
+          const { data: postData, error } = await query;
+          if (error || !postData) return null;
+
+          return {
+            rawPosts: postData as Post[],
+            visiblePosts: filterVisiblePosts(
+              (postData as Post[]).filter((post) => followingIds.has(post.user_id)),
+              user?.id,
+              followingIds
+            ),
+          };
+        }
       );
-      if (user?.id) followingIds.add(user.id);
 
-      let query = supabase
-        .from("posts")
-        .select("*, profiles:user_id (id, username, display_name, avatar_url)")
-        .order("created_at", { ascending: false })
-        .limit(PAGE_SIZE);
-
-      if (!reset && cursorRef.current) {
-        query = query.lt("created_at", cursorRef.current);
-      }
-
-      const { data, error } = await query;
-
-      if (!error && data) {
-        const visiblePosts = filterVisiblePosts(
-          (data as Post[]).filter((post) => followingIds.has(post.user_id)),
-          user?.id,
-          followingIds
-        );
+      if (data) {
+        const { rawPosts, visiblePosts } = data;
         if (reset) {
           setPosts(visiblePosts);
+          setCachedFollowingPosts(visiblePosts);
           cursorRef.current =
             visiblePosts.length > 0
               ? visiblePosts[visiblePosts.length - 1].created_at
@@ -126,14 +228,16 @@ export default function FeedPage() {
           setPosts((prev) => {
             const existingIds = new Set(prev.map((p) => p.id));
             const unique = visiblePosts.filter((p) => !existingIds.has(p.id));
-            return [...prev, ...unique];
+            const next = [...prev, ...unique];
+            setCachedFollowingPosts(next);
+            return next;
           });
           if (visiblePosts.length > 0) {
             cursorRef.current = visiblePosts[visiblePosts.length - 1].created_at;
           }
         }
-        setHasMore((data as Post[]).length === PAGE_SIZE);
-        // Persist first page to IndexedDB
+        const nextHasMore = rawPosts.length === PAGE_SIZE;
+        setHasMore(nextHasMore);
         if (reset && visiblePosts.length > 0) {
           safeCache(() => cachePosts(visiblePosts), undefined);
         }
@@ -148,11 +252,29 @@ export default function FeedPage() {
           if (likeData) {
             const newLikedIds = new Set(likeData.map((l) => l.post_id));
             setLikedPostIds((prev) => {
-              if (reset) return newLikedIds;
+              if (reset) {
+                setCachedLikedPostIds(newLikedIds);
+                return newLikedIds;
+              }
               const merged = new Set(prev);
               newLikedIds.forEach((id) => merged.add(id));
+              setCachedLikedPostIds(merged);
               return merged;
             });
+            if (reset) {
+              const cacheValue: FollowingFeedCache = {
+                posts: visiblePosts,
+                likedPostIds: [...newLikedIds],
+                cursor: cursorRef.current,
+                hasMore: nextHasMore,
+              };
+              void setCachedQuery(
+                user.id,
+                FOLLOWING_FEED_CACHE_KEY,
+                cacheValue,
+                CACHE_TTL.feed
+              );
+            }
           }
         }
       }
@@ -161,51 +283,103 @@ export default function FeedPage() {
       console.warn("loadPosts failed:", err);
     }
     setLoading(false);
-  }, [user]);
+  }, [
+    feedLoadedAt,
+    posts.length,
+    setCachedFollowingPosts,
+    setCachedLikedPostIds,
+    user,
+  ]);
 
   // ── Trending feed ─────────────────────────────────────────
-  const loadTrending = useCallback(async () => {
+  const loadTrending = useCallback(async (force = false) => {
     if (!storeUser) return;
-    setTrendingLoading(true);
+
+    const memoryFresh = Date.now() - trendingLoadedAt < CACHE_TTL.feed;
+    if (!force && trendingLoadedAt > 0 && memoryFresh) {
+      hasTrendingRef.current = true;
+      setTrendingLoading(false);
+      return;
+    }
+
+    if (!force && trendingPosts.length === 0 && recommendedUsers.length === 0) {
+      const cached = await getCachedQuery<TrendingFeedCache>(
+        storeUser.id,
+        TRENDING_FEED_CACHE_KEY
+      );
+      if (cached?.value) {
+        setTrendingPosts(cached.value.posts);
+        setRecommendedUsers(cached.value.recommendedUsers);
+        setFollowed(new Set(cached.value.followedIds));
+        setCachedTrendingData(
+          cached.value.posts,
+          cached.value.recommendedUsers,
+          cached.updated_at
+        );
+        setTrendingLoading(false);
+        hasTrendingRef.current = true;
+        if (isCacheFresh(cached)) return;
+      }
+    }
+
+    if (trendingPosts.length === 0 && recommendedUsers.length === 0) {
+      setTrendingLoading(true);
+    }
     const supabase = getSupabaseBrowserClient();
     if (!supabase) return;
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const [postsResult, followingResult] = await Promise.all([
-      supabase
-        .from("posts")
-        .select("*, profiles:user_id(id, username, display_name, avatar_url)")
-        .gte("created_at", sevenDaysAgo)
-        .order("likes_count", { ascending: false })
-        .limit(20),
-      supabase
-        .from("follows")
-        .select("following_id")
-        .eq("follower_id", storeUser.id),
-    ]);
+    const result = await dedupeRequest(`${storeUser.id}:${TRENDING_FEED_CACHE_KEY}`, async () => {
+      const [postsResult, followingResult] = await Promise.all([
+        supabase
+          .from("posts")
+          .select("*, profiles:user_id(id, username, display_name, avatar_url)")
+          .gte("created_at", sevenDaysAgo)
+          .order("likes_count", { ascending: false })
+          .limit(20),
+        supabase
+          .from("follows")
+          .select("following_id")
+          .eq("follower_id", storeUser.id),
+      ]);
 
-    const followingIds = new Set(followingResult.data?.map((f) => f.following_id) ?? []);
-    followingIds.add(storeUser.id);
-    setFollowed(new Set(followingResult.data?.map((f) => f.following_id) ?? []));
+      const followingIds = new Set(followingResult.data?.map((f) => f.following_id) ?? []);
+      followingIds.add(storeUser.id);
 
-    if (postsResult.data) {
-      setTrendingPosts(
-        filterVisiblePosts(postsResult.data as Post[], storeUser.id, followingIds)
-      );
-    }
+      const nextTrendingPosts = postsResult.data
+        ? filterVisiblePosts(postsResult.data as Post[], storeUser.id, followingIds)
+        : [];
 
-    const { data: allUsers } = await supabase
-      .from("profiles")
-      .select("*")
-      .order("followers_count", { ascending: false })
-      .limit(30);
-    if (allUsers) {
-      setRecommendedUsers((allUsers as Profile[]).filter((p) => !followingIds.has(p.id)).slice(0, 10));
-    }
+      const { data: allUsers } = await supabase
+        .from("profiles")
+        .select("*")
+        .order("followers_count", { ascending: false })
+        .limit(30);
+
+      return {
+        posts: nextTrendingPosts,
+        recommendedUsers: allUsers
+          ? (allUsers as Profile[]).filter((p) => !followingIds.has(p.id)).slice(0, 10)
+          : [],
+        followedIds: followingResult.data?.map((f) => f.following_id) ?? [],
+      };
+    });
+
+    setTrendingPosts(result.posts);
+    setRecommendedUsers(result.recommendedUsers);
+    setFollowed(new Set(result.followedIds));
+    setCachedTrendingData(result.posts, result.recommendedUsers);
+    void setCachedQuery(storeUser.id, TRENDING_FEED_CACHE_KEY, result, CACHE_TTL.feed);
 
     setTrendingLoading(false);
     hasTrendingRef.current = true;
-  }, [storeUser]);
+  }, [
+    recommendedUsers.length,
+    setCachedTrendingData,
+    storeUser,
+    trendingLoadedAt,
+    trendingPosts.length,
+  ]);
 
   const toggleFollow = async (targetId: string) => {
     if (!storeUser) return;
@@ -252,21 +426,29 @@ export default function FeedPage() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "likes" }, (payload) => {
         const like = payload.new as { post_id: string; user_id: string };
         // Only update liked set — count comes from posts UPDATE trigger
-        if (like.user_id === user.id) setLikedPostIds((prev) => new Set(prev).add(like.post_id));
+        if (like.user_id === user.id) {
+          setLikedPostIds((prev) => new Set(prev).add(like.post_id));
+          setCachedLikedPostIds([like.post_id], true);
+        }
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "likes" }, (payload) => {
         const like = payload.old as { post_id?: string; user_id?: string };
         if (like.post_id && like.user_id === user.id) {
           setLikedPostIds((prev) => { const next = new Set(prev); next.delete(like.post_id!); return next; });
+          removeCachedLikedPostId(like.post_id);
         }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "posts" }, (payload) => {
         const updated = payload.new as Post;
         setPosts((prev) => prev.map((p) => p.id === updated.id ? { ...p, likes_count: updated.likes_count, comments_count: updated.comments_count } : p));
+        patchCachedPostCounts(updated);
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "posts" }, (payload) => {
         const deleted = payload.old as { id?: string };
-        if (deleted.id) setPosts((prev) => prev.filter((p) => p.id !== deleted.id));
+        if (deleted.id) {
+          setPosts((prev) => prev.filter((p) => p.id !== deleted.id));
+          removeCachedPost(deleted.id);
+        }
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "comments" }, (payload) => {
         // Only update liked set — count comes from posts UPDATE trigger
@@ -274,7 +456,13 @@ export default function FeedPage() {
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  }, [
+    patchCachedPostCounts,
+    removeCachedLikedPostId,
+    removeCachedPost,
+    setCachedLikedPostIds,
+    user,
+  ]);
 
   // Pull to refresh
   const { pullDistance, isRefreshing, triggered } = usePullToRefresh({
@@ -282,9 +470,9 @@ export default function FeedPage() {
       setNewPostCount(0);
       if (tab === "following") {
         cursorRef.current = null;
-        await loadPosts(true);
+        await loadPosts(true, true);
       } else {
-        await loadTrending();
+        await loadTrending(true);
       }
     },
   });
@@ -292,7 +480,7 @@ export default function FeedPage() {
   const handleLoadNewPosts = () => {
     setNewPostCount(0);
     cursorRef.current = null;
-    loadPosts(true);
+    loadPosts(true, true);
   };
 
   if (authLoading) {
@@ -429,7 +617,10 @@ export default function FeedPage() {
               hasMore={hasMore}
               onLoadMore={() => loadPosts(false)}
               likedPostIds={likedPostIds}
-              onDeletePost={(postId) => setPosts((prev) => prev.filter((p) => p.id !== postId))}
+              onDeletePost={(postId) => {
+                setPosts((prev) => prev.filter((p) => p.id !== postId));
+                removeCachedPost(postId);
+              }}
               density={density}
               emptyTitle="Лента подписок пока тихая"
               emptyDescription="Подпишитесь на людей или опубликуйте свой первый пост, чтобы разогреть ленту."
