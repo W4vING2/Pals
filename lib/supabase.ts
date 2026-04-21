@@ -91,6 +91,7 @@ export type ConversationParticipant = {
   user_id: string;
   unread_count: number;
   last_read_at: string | null;
+  is_muted: boolean;
   created_at: string;
   profiles?: ProfileSummary;
 };

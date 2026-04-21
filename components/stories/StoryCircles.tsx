@@ -155,6 +155,7 @@ export function StoryCircles({ onOpenViewer, onCreateStory }: StoryCirclesProps)
                       src={ownProfile?.avatar_url || ownGroup?.profile?.avatar_url || ""}
                       alt=""
                       className="w-full h-full object-cover"
+                      loading="lazy"
                     />
                   ) : (
                     <span className="text-xs text-[var(--text-secondary)]">
@@ -200,6 +201,7 @@ export function StoryCircles({ onOpenViewer, onCreateStory }: StoryCirclesProps)
                       src={group.profile.avatar_url}
                       alt=""
                       className="w-full h-full object-cover"
+                      loading="lazy"
                     />
                   ) : (
                     <span className="text-xs text-[var(--text-secondary)]">

@@ -4,6 +4,7 @@ import "./globals.css";
 import { AppShell } from "@/components/layout/AppShell";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -46,10 +47,19 @@ export default function RootLayout({
       lang="en"
       className={cn("dark h-full", inter.variable)}
       data-scroll-behavior="smooth"
+      suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `
+          try {
+            const t = localStorage.getItem('pals-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+          } catch(e) {}
+        `}} />
+      </head>
       <body className="min-h-dvh bg-[var(--bg-base)] text-[var(--text-primary)] antialiased">
         <TooltipProvider delay={300}>
-          <AppShell>{children}</AppShell>
+          <AppShell><ErrorBoundary>{children}</ErrorBoundary></AppShell>
         </TooltipProvider>
       </body>
     </html>

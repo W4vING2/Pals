@@ -15,7 +15,7 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { PageTransition } from "@/components/layout/PageTransition";
-import { Loader2, Check, AlertTriangle, Ban, Bell, BellOff } from "lucide-react";
+import { Loader2, Check, AlertTriangle, Ban, Bell, BellOff, Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
 import { isPushSupported, subscribeToPush, unsubscribeFromPush, isSubscribedToPush } from "@/lib/push";
@@ -48,6 +48,21 @@ export default function SettingsPage() {
   const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
   const [loadingBlocked, setLoadingBlocked] = useState(true);
 
+  // Theme
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("pals-theme") as "dark" | "light") ?? "dark";
+    }
+    return "dark";
+  });
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    localStorage.setItem("pals-theme", next);
+    document.documentElement.setAttribute("data-theme", next);
+  };
+
   // Danger zone
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -66,6 +81,7 @@ export default function SettingsPage() {
     if (!user) return;
     setLoadingBlocked(true);
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
     const { data } = await supabase
       .from("blocked_users")
       .select("blocked_id, profiles:blocked_id(id, username, display_name, avatar_url)")
@@ -81,6 +97,7 @@ export default function SettingsPage() {
   const handleUnblock = async (blockedId: string) => {
     if (!user) return;
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
     await supabase.from("blocked_users").delete().eq("blocker_id", user.id).eq("blocked_id", blockedId);
     setBlockedUsers((prev) => prev.filter((b) => b.blocked_id !== blockedId));
   };
@@ -89,6 +106,7 @@ export default function SettingsPage() {
     if (!user) return;
     setSavingProfile(true);
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
     const { data } = await supabase
       .from("profiles")
       .update({
@@ -122,6 +140,7 @@ export default function SettingsPage() {
     }
     setSavingPassword(true);
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
     const { error } = await supabase.auth.updateUser({
       password: newPassword,
     });
@@ -208,6 +227,38 @@ export default function SettingsPage() {
                 )}
                 Сохранить
               </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Theme Section */}
+        <Card className="bg-[var(--bg-surface)] border-[var(--border)]">
+          <CardHeader>
+            <CardTitle className="text-[var(--text-primary)] flex items-center gap-2">
+              {theme === "dark" ? <Moon className="size-4" /> : <Sun className="size-4" />}
+              Тема
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-[var(--text-primary)]">
+                {theme === "dark" ? "Тёмная тема" : "Светлая тема"}
+              </p>
+              <button
+                onClick={toggleTheme}
+                className={cn(
+                  "relative w-12 h-6 rounded-full transition-colors duration-300 focus:outline-none",
+                  theme === "dark" ? "bg-[var(--accent-blue)]" : "bg-gray-300"
+                )}
+                aria-label="Toggle theme"
+              >
+                <span
+                  className={cn(
+                    "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-300",
+                    theme === "dark" ? "translate-x-6" : "translate-x-0"
+                  )}
+                />
+              </button>
             </div>
           </CardContent>
         </Card>

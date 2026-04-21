@@ -299,6 +299,7 @@ create table if not exists public.conversation_participants (
   user_id          uuid not null references public.profiles(id) on delete cascade,
   unread_count     integer not null default 0,
   last_read_at     timestamptz,
+  is_muted         boolean not null default false,
   created_at       timestamptz not null default now(),
   unique (conversation_id, user_id)
 );
@@ -517,6 +518,117 @@ create trigger trg_cleanup_call_signals
 before insert on public.call_signals
 for each row execute function cleanup_old_call_signals();
 
+-- ── call_logs ─────────────────────────────────────────────────
+create table if not exists public.call_logs (
+  id                uuid primary key default gen_random_uuid(),
+  caller_id         uuid not null references public.profiles(id) on delete cascade,
+  callee_id         uuid not null references public.profiles(id) on delete cascade,
+  call_type         text not null check (call_type in ('voice', 'video')),
+  status            text not null check (status in ('completed', 'missed', 'declined', 'failed')),
+  duration_seconds  integer not null default 0,
+  started_at        timestamptz not null default now(),
+  ended_at          timestamptz
+);
+
+create index if not exists call_logs_caller_id_idx
+  on public.call_logs(caller_id, started_at desc);
+create index if not exists call_logs_callee_id_idx
+  on public.call_logs(callee_id, started_at desc);
+
+alter table public.call_logs enable row level security;
+
+create policy "Users see own call logs"
+  on public.call_logs for select
+  using (caller_id = auth.uid() or callee_id = auth.uid());
+
+create policy "Caller can insert"
+  on public.call_logs for insert
+  with check (caller_id = auth.uid());
+
+create policy "Caller can update"
+  on public.call_logs for update
+  using (caller_id = auth.uid());
+
+-- ── topics ────────────────────────────────────────────────────
+create table if not exists public.topics (
+  id                 uuid primary key default gen_random_uuid(),
+  title              text not null,
+  description        text,
+  created_by         uuid not null references public.profiles(id) on delete cascade,
+  created_at         timestamptz not null default now(),
+  expires_at         timestamptz not null default (now() + interval '24 hours'),
+  participant_count  integer not null default 0,
+  message_count      integer not null default 0,
+  tags               text[] default '{}'
+);
+
+create index if not exists topics_expires_at_idx
+  on public.topics(expires_at desc);
+
+alter table public.topics enable row level security;
+
+create policy "Anyone can read active topics"
+  on public.topics for select
+  using (expires_at > now());
+
+create policy "Auth users can create topics"
+  on public.topics for insert
+  with check (auth.uid() = created_by);
+
+create policy "Auth users can update active topics"
+  on public.topics for update
+  using (auth.uid() is not null and expires_at > now())
+  with check (auth.uid() is not null and expires_at > now());
+
+create table if not exists public.topic_messages (
+  id          uuid primary key default gen_random_uuid(),
+  topic_id    uuid not null references public.topics(id) on delete cascade,
+  sender_id   uuid not null references public.profiles(id) on delete cascade,
+  content     text not null,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists topic_messages_topic_id_idx
+  on public.topic_messages(topic_id, created_at asc);
+
+alter table public.topic_messages replica identity full;
+alter table public.topic_messages enable row level security;
+
+create policy "Anyone can read topic messages"
+  on public.topic_messages for select
+  using (
+    exists (
+      select 1 from public.topics
+      where topics.id = topic_messages.topic_id
+        and topics.expires_at > now()
+    )
+  );
+
+create policy "Auth users can send messages"
+  on public.topic_messages for insert
+  with check (
+    auth.uid() = sender_id
+    and exists (
+      select 1 from public.topics
+      where topics.id = topic_messages.topic_id
+        and topics.expires_at > now()
+    )
+  );
+
+create or replace function increment_topic_message_count()
+returns trigger language plpgsql security definer as $$
+begin
+  update public.topics
+  set message_count = message_count + 1
+  where id = new.topic_id;
+  return new;
+end;
+$$;
+
+create trigger on_topic_message_insert
+after insert on public.topic_messages
+for each row execute function increment_topic_message_count();
+
 -- ── Realtime: enable tables ───────────────────────────────────
 alter publication supabase_realtime add table public.posts;
 alter publication supabase_realtime add table public.messages;
@@ -528,6 +640,8 @@ alter publication supabase_realtime add table public.likes;
 alter publication supabase_realtime add table public.comments;
 alter publication supabase_realtime add table public.conversations;
 alter publication supabase_realtime add table public.conversation_participants;
+alter publication supabase_realtime add table public.topics;
+alter publication supabase_realtime add table public.topic_messages;
 
 -- ── Storage buckets ───────────────────────────────────────────
 -- Create a "media" bucket in Supabase Storage with public access

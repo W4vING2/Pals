@@ -34,6 +34,10 @@ let lastDeclineAt = 0;
 /** Buffered answer signal — if answer arrives before activeCall is set */
 let pendingAnswer: string | null = null;
 
+// ── Call log tracking ─────────────────────────────────────────────
+/** Timestamp (ms) when the active call connected */
+let callConnectedAt: number | null = null;
+
 // ── Module-level outbound channel state ───────────────────────────
 let outboundChannel: RealtimeChannel | null = null;
 let outboundReady = false;
@@ -87,6 +91,32 @@ function sendSignal(signal: BroadcastSignal) {
     outboundChannel.send({ type: "broadcast", event: "signal", payload: signal });
   } else {
     outboundQueue.push(signal);
+  }
+}
+
+async function insertCallLog(params: {
+  callerId: string;
+  calleeId: string;
+  callType: "voice" | "video";
+  status: "completed" | "missed" | "declined" | "failed";
+  startedAt: Date;
+  endedAt?: Date;
+  durationSeconds?: number;
+}) {
+  try {
+    const supabase = getSupabaseBrowserClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase as any).from("call_logs").insert({
+      caller_id: params.callerId,
+      callee_id: params.calleeId,
+      call_type: params.callType,
+      status: params.status,
+      duration_seconds: params.durationSeconds ?? 0,
+      started_at: params.startedAt.toISOString(),
+      ended_at: params.endedAt?.toISOString() ?? null,
+    });
+  } catch (err) {
+    console.warn("Failed to save call log:", err);
   }
 }
 
@@ -165,9 +195,12 @@ function setupInboundChannel(userId: string) {
         }
       } else if (signal.type === "hang-up") {
         pendingSignals.length = 0;
+        // Reset connected-at so caller's onClose doesn't double-log
+        callConnectedAt = null;
+        const store = useCallStore.getState();
         const manager = getWebRTCManager();
         manager.destroy();
-        useCallStore.getState().endCall();
+        store.endCall();
         cleanupOutbound();
       }
     })
@@ -319,6 +352,7 @@ export function useCalls() {
 
         manager.onConnected = () => {
           clearInterval(answerCheckTimer);
+          callConnectedAt = Date.now();
           setCallStatus("connected");
         };
         manager.onError = (err) => {
@@ -326,6 +360,31 @@ export function useCalls() {
           setCallError(err.message);
         };
         manager.onClose = () => {
+          // Record call log for caller on unexpected close (other side left without signal)
+          const store = useCallStore.getState();
+          if (store.activeCall && callConnectedAt !== null) {
+            const now = new Date();
+            const durationSeconds = Math.round((Date.now() - callConnectedAt) / 1000);
+            insertCallLog({
+              callerId: user.id,
+              calleeId: remoteUserId,
+              callType: callType,
+              status: "completed",
+              startedAt: new Date(callConnectedAt),
+              endedAt: now,
+              durationSeconds,
+            });
+            callConnectedAt = null;
+          } else if (store.activeCall) {
+            insertCallLog({
+              callerId: user.id,
+              calleeId: remoteUserId,
+              callType: callType,
+              status: "failed",
+              startedAt: new Date(),
+              durationSeconds: 0,
+            });
+          }
           endCall();
           cleanupOutbound();
         };
@@ -391,12 +450,17 @@ export function useCalls() {
       });
       setIncomingCall(null);
 
-      manager.onConnected = () => setCallStatus("connected");
+      manager.onConnected = () => {
+        callConnectedAt = Date.now();
+        setCallStatus("connected");
+      };
       manager.onError = (err) => {
         console.error("WebRTC error:", err);
         setCallError(err.message);
       };
       manager.onClose = () => {
+        // Reset connected-at on callee side — caller handles logging
+        callConnectedAt = null;
         endCall();
         cleanupOutbound();
       };
@@ -444,6 +508,27 @@ export function useCalls() {
   const hangup = useCallback(async () => {
     if (!user || !activeCall) return;
     const manager = getWebRTCManager();
+
+    // Only the original caller inserts the call log (RLS: caller_id = auth.uid())
+    // When callee hangs up, the caller's onClose fires and logs from their side
+    if (activeCall.callerId === user.id) {
+      const now = new Date();
+      const wasConnected = callConnectedAt !== null;
+      const durationSeconds = wasConnected
+        ? Math.round((Date.now() - callConnectedAt!) / 1000)
+        : 0;
+      const startedAt = wasConnected ? new Date(callConnectedAt!) : now;
+      insertCallLog({
+        callerId: user.id,
+        calleeId: activeCall.remoteUserId,
+        callType: activeCall.type,
+        status: wasConnected ? "completed" : "missed",
+        startedAt,
+        endedAt: now,
+        durationSeconds,
+      });
+    }
+    callConnectedAt = null;
 
     // Send hang-up via outbound channel
     sendSignal({

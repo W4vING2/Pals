@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/store";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { haptic } from "@/lib/haptics";
+import { compressImage } from "@/lib/compress";
 
 function isCapacitorNative(): boolean {
   return typeof window !== "undefined" && !!(window as any).Capacitor?.isNativePlatform?.();
@@ -341,12 +342,13 @@ export function ChatWindow({
     if (e.key === "Escape" && mentionQuery !== null) setMentionQuery(null);
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadError(null);
-    setPendingFile(file);
-    setPendingPreview(URL.createObjectURL(file));
+    const compressed = await compressImage(file);
+    setPendingFile(compressed);
+    setPendingPreview(URL.createObjectURL(compressed));
     setCaption("");
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -789,7 +791,7 @@ export function ChatWindow({
                 onClick={async () => {
                   if (isCapacitorNative()) {
                     const file = await pickImageCapacitor();
-                    if (file) { setUploadError(null); setPendingFile(file); setPendingPreview(URL.createObjectURL(file)); setCaption(""); }
+                    if (file) { setUploadError(null); const compressed = await compressImage(file); setPendingFile(compressed); setPendingPreview(URL.createObjectURL(compressed)); setCaption(""); }
                   } else {
                     fileInputRef.current?.click();
                   }

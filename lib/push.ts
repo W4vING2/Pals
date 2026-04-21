@@ -191,7 +191,7 @@ async function subscribeWeb(userId: string): Promise<boolean> {
       return false;
     }
 
-    console.log("Push: subscribed successfully");
+    // console.log("Push: subscribed successfully");
     return true;
   } catch (err) {
     console.error("Web push subscribe failed:", err);
