@@ -4,7 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Home, Search, MessageCircle, Bell, User, Phone } from "lucide-react";
+import { Home, Search, MessageCircle, Bell, User } from "lucide-react";
 import { useAuthStore, useNotificationStore, useUnreadMessagesStore } from "@/lib/store";
 import { haptic } from "@/lib/haptics";
 
@@ -19,7 +19,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/",              icon: Home,          label: "Главная"  },
   { href: "/search",        icon: Search,        label: "Поиск"    },
   { href: "/messages",      icon: MessageCircle, label: "Чаты"     },
-  { href: "/calls",         icon: Phone,         label: "Звонки"   },
   { href: "/notifications", icon: Bell,          label: "Уведомл." },
   { href: "/profile",       icon: User,          label: "Профиль", isDynamic: true },
 ];
