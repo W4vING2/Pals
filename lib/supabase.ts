@@ -28,6 +28,7 @@ export type Post = {
   content: string;
   image_url: string | null;
   image_urls: string[];
+  visibility: "public" | "followers";
   likes_count: number;
   comments_count: number;
   created_at: string;
@@ -46,6 +47,7 @@ export type Comment = {
   id: string;
   user_id: string;
   post_id: string;
+  parent_comment_id: string | null;
   content: string;
   created_at: string;
   updated_at: string;
@@ -195,8 +197,8 @@ export type Database = {
       >;
       posts: TableDef<
         Post,
-        { user_id: string; content?: string | null; image_url?: string | null; image_urls?: string[]; likes_count?: number; comments_count?: number },
-        Partial<{ user_id: string; content: string | null; image_url: string | null; updated_at: string }>
+        { user_id: string; content?: string | null; image_url?: string | null; image_urls?: string[]; visibility?: "public" | "followers"; likes_count?: number; comments_count?: number },
+        Partial<{ user_id: string; content: string | null; image_url: string | null; visibility: "public" | "followers"; updated_at: string }>
       >;
       likes: TableDef<
         Like,
@@ -205,8 +207,8 @@ export type Database = {
       >;
       comments: TableDef<
         Comment,
-        { user_id: string; post_id: string; content: string },
-        Partial<{ content: string; updated_at: string }>
+        { user_id: string; post_id: string; content: string; parent_comment_id?: string | null },
+        Partial<{ content: string; parent_comment_id: string | null; updated_at: string }>
       >;
       follows: TableDef<
         Follow,
@@ -220,8 +222,8 @@ export type Database = {
       >;
       conversation_participants: TableDef<
         ConversationParticipant,
-        { conversation_id: string; user_id: string; unread_count?: number; last_read_at?: string | null },
-        Partial<{ unread_count: number; last_read_at: string | null }>
+        { conversation_id: string; user_id: string; unread_count?: number; last_read_at?: string | null; is_muted?: boolean },
+        Partial<{ unread_count: number; last_read_at: string | null; is_muted: boolean }>
       >;
       messages: TableDef<
         Message,

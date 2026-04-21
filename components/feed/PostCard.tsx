@@ -4,7 +4,13 @@ import React, { useState, useCallback, useEffect, memo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { MessageCircle, Share2, Send, Loader2, Trash2 } from "lucide-react";
+import {
+  Globe,
+  Lock,
+  MessageCircle,
+  Share2,
+  Trash2,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
 import { LikeButton } from "@/components/shared/LikeButton";
@@ -13,6 +19,8 @@ import { useAuthStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { ImageCarousel } from "@/components/shared/ImageCarousel";
 import type { Post } from "@/lib/supabase";
+import type { FeedDensity } from "@/lib/store";
+import { CommentsThread } from "./CommentsThread";
 
 interface PostCardProps {
   post: Post;
@@ -20,6 +28,7 @@ interface PostCardProps {
   /** Mark as LCP candidate — loads image eagerly with priority */
   priority?: boolean;
   onDelete?: (postId: string) => void;
+  density?: FeedDensity;
 }
 
 function timeAgo(dateStr: string): string {
@@ -44,7 +53,13 @@ function getInitials(name: string): string {
     .toUpperCase();
 }
 
-export const PostCard = memo(function PostCard({ post, initialLiked, priority, onDelete }: PostCardProps) {
+export const PostCard = memo(function PostCard({
+  post,
+  initialLiked,
+  priority,
+  onDelete,
+  density = "cozy",
+}: PostCardProps) {
   const { user } = useAuthStore();
   const router = useRouter();
   const [liked, setLiked] = useState(initialLiked ?? false);
@@ -70,9 +85,6 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority, o
   }, [initialLiked]);
   const [likePending, setLikePending] = useState(false);
   const [showComments, setShowComments] = useState(false);
-  const [comments, setComments] = useState<Array<{id: string; content: string; created_at: string; user_id?: string; profiles?: {username: string; display_name: string | null; avatar_url: string | null}}>>([]);
-  const [commentText, setCommentText] = useState("");
-  const [commentLoading, setCommentLoading] = useState(false);
   const [commentCount, setCommentCount] = useState(post.comments_count ?? 0);
   const profile = post.profiles;
   const name = profile?.display_name ?? profile?.username ?? "Unknown";
@@ -81,7 +93,7 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority, o
   const displayLikeCount = post.likes_count !== likeCount && !likePending
     ? post.likes_count ?? likeCount
     : likeCount;
-  const displayCommentCount = post.comments_count !== commentCount && !commentLoading
+  const displayCommentCount = post.comments_count !== commentCount
     ? post.comments_count ?? commentCount
     : commentCount;
 
@@ -117,45 +129,10 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority, o
     setLikePending(false);
   }, [user, liked, likePending, post.id]);
 
-  const loadComments = useCallback(async () => {
-    const supabase = getSupabaseBrowserClient();
-    const { data } = await supabase
-      .from("comments")
-      .select("id, content, created_at, user_id, profiles:user_id (username, display_name, avatar_url)")
-      .eq("post_id", post.id)
-      .order("created_at", { ascending: true });
-    if (data) setComments(data as typeof comments);
-  }, [post.id]);
-
   const handleToggleComments = useCallback(async () => {
     const opening = !showComments;
     setShowComments(opening);
-    if (opening) await loadComments();
-  }, [showComments, loadComments]);
-
-  const submitComment = useCallback(async () => {
-    if (!user || !commentText.trim()) return;
-    setCommentLoading(true);
-    const supabase = getSupabaseBrowserClient();
-    await supabase.from("comments").insert({
-      post_id: post.id,
-      user_id: user.id,
-      content: commentText.trim(),
-    });
-    setCommentText("");
-    setCommentCount((c) => c + 1);
-    await loadComments();
-    setCommentLoading(false);
-  }, [user, commentText, post.id, loadComments]);
-
-  const handleDeleteComment = useCallback(async (commentId: string) => {
-    if (!user) return;
-    if (!window.confirm("Удалить комментарий?")) return;
-    const supabase = getSupabaseBrowserClient();
-    await supabase.from("comments").delete().eq("id", commentId);
-    setComments((prev) => prev.filter((c) => c.id !== commentId));
-    setCommentCount((c) => Math.max(0, c - 1));
-  }, [user]);
+  }, [showComments]);
 
   const handleShare = useCallback(async () => {
     const postUrl = `${window.location.origin}/post/${post.id}`;
@@ -187,10 +164,15 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority, o
   return (
     <div className="animate-fade-in">
       <Card
-        className="rounded-2xl bg-[var(--bg-surface)] border-[var(--border)] p-0 gap-0 cursor-pointer"
+        className={cn(
+          "rounded-2xl bg-[var(--bg-surface)] border-[var(--border)] p-0 gap-0 cursor-pointer",
+          density === "compact" && "rounded-xl"
+        )}
         onClick={navigateToPost}
       >
-        <CardContent className="p-4 space-y-3">
+        <CardContent
+          className={cn("p-4 space-y-3", density === "compact" && "p-3 space-y-2.5")}
+        >
           {/* Header */}
           <div className="flex items-center gap-3">
             <Link href={`/profile/${profile?.username ?? ""}`} onClick={(e) => e.stopPropagation()}>
@@ -210,6 +192,21 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority, o
                 >
                   {name}
                 </Link>
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                    post.visibility === "followers"
+                      ? "bg-amber-500/10 text-amber-300"
+                      : "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"
+                  )}
+                >
+                  {post.visibility === "followers" ? (
+                    <Lock className="h-3 w-3" />
+                  ) : (
+                    <Globe className="h-3 w-3" />
+                  )}
+                  {post.visibility === "followers" ? "Подписчики" : "Публично"}
+                </span>
                 <span className="text-xs text-[var(--text-secondary)]">
                   {timeAgo(post.created_at)}
                 </span>
@@ -232,7 +229,12 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority, o
 
           {/* Content */}
           {post.content && (
-            <p className="text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap">
+            <p
+              className={cn(
+                "text-sm text-[var(--text-primary)] leading-relaxed whitespace-pre-wrap",
+                density === "compact" && "text-[13px]"
+              )}
+            >
               {post.content.split(/(#[\wа-яА-ЯёЁ]+)/g).map((part, i) =>
                 part.startsWith("#") ? (
                   <Link key={i} href={`/search?q=${encodeURIComponent(part)}`}
@@ -268,11 +270,11 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority, o
             {/* Comment */}
             <button
               onClick={handleToggleComments}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium",
-                "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)]",
-                "transition-colors active:scale-95",
-                showComments && "text-[var(--accent-blue)]"
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-medium",
+                  "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)]",
+                  "transition-colors active:scale-95",
+                  showComments && "text-[var(--accent-blue)]"
               )}
             >
               <MessageCircle className="w-[18px] h-[18px]" />
@@ -307,68 +309,12 @@ export const PostCard = memo(function PostCard({ post, initialLiked, priority, o
                 className="overflow-hidden"
               >
                 <div className="border-t border-[var(--border)] pt-3 space-y-3">
-                  {/* Existing comments */}
-                  {comments.length > 0 && (
-                    <div className="space-y-2.5 max-h-60 overflow-y-auto">
-                      {comments.map((c) => (
-                        <div key={c.id} className="flex gap-2 group/comment">
-                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-[10px] font-bold shrink-0 mt-0.5">
-                            {(c.profiles?.display_name ?? c.profiles?.username ?? "?")[0]?.toUpperCase()}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline gap-1.5">
-                              <span className="text-xs font-semibold text-[var(--text-primary)]">
-                                {c.profiles?.display_name ?? c.profiles?.username}
-                              </span>
-                              <span className="text-[10px] text-[var(--text-secondary)]">
-                                {timeAgo(c.created_at)}
-                              </span>
-                              {user && c.user_id === user.id && (
-                                <button
-                                  onClick={() => handleDeleteComment(c.id)}
-                                  className="opacity-0 group-hover/comment:opacity-100 ml-auto p-0.5 rounded text-red-500 hover:bg-red-500/10 transition-all"
-                                  title="Удалить"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              )}
-                            </div>
-                            <p className="text-xs text-[var(--text-primary)] leading-relaxed">{c.content}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Comment input */}
-                  {user && (
-                    <div className="flex gap-2 items-center">
-                      <input
-                        type="text"
-                        value={commentText}
-                        onChange={(e) => setCommentText(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") submitComment(); }}
-                        placeholder="Написать комментарий..."
-                        className="flex-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-full px-3 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none input-focus transition-colors"
-                      />
-                      <button
-                        onClick={submitComment}
-                        disabled={!commentText.trim() || commentLoading}
-                        className={cn(
-                          "w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-colors active:scale-95",
-                          commentText.trim()
-                            ? "bg-[var(--accent-blue)] text-white"
-                            : "text-[var(--text-secondary)]"
-                        )}
-                      >
-                        {commentLoading ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Send className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  )}
+                  <CommentsThread
+                    postId={post.id}
+                    currentUserId={user?.id}
+                    compact
+                    onCountChange={setCommentCount}
+                  />
                 </div>
               </motion.div>
             )}

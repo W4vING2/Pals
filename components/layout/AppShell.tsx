@@ -3,17 +3,22 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { X } from "lucide-react";
+import { Camera, Plus, SquarePen, X } from "lucide-react";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { MobileNavBar } from "./MobileNavBar";
 import { useAuth } from "@/hooks/useAuth";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { usePresence } from "@/hooks/usePresence";
 import { useRealtimeBadges } from "@/hooks/useRealtimeBadges";
-import { useCallStore, useCreatePostStore } from "@/lib/store";
+import {
+  useCallStore,
+  useCreatePostStore,
+  useQuickActionStore,
+} from "@/lib/store";
 import { IncomingCallBanner } from "@/components/calls/IncomingCallBanner";
 import { CallOverlay } from "@/components/calls/CallOverlay";
 import { CreatePost } from "@/components/feed/CreatePost";
+import { CreateStory } from "@/components/stories/CreateStory";
 
 const AUTH_PATHS = ["/auth"];
 
@@ -73,6 +78,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useRealtimeBadges();
   const { activeCall, callError, setCallError } = useCallStore();
   const { open: createPostOpen, setOpen: setCreatePostOpen } = useCreatePostStore();
+  const {
+    expanded: quickActionsExpanded,
+    createStoryOpen,
+    bumpStoryRefreshKey,
+    setExpanded: setQuickActionsExpanded,
+    toggleExpanded: toggleQuickActions,
+    setCreateStoryOpen,
+  } = useQuickActionStore();
 
   // Only show splash once per app lifetime (not on re-renders or tab switch)
   const splashDoneRef = useRef(false);
@@ -193,6 +206,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => cleanup?.();
   }, []);
 
+  useEffect(() => {
+    setQuickActionsExpanded(false);
+  }, [pathname, setQuickActionsExpanded]);
+
   const isAuthPage = AUTH_PATHS.some((p) => pathname.startsWith(p));
   const showNav = !isAuthPage && !!user && !loading;
 
@@ -214,6 +231,80 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             open={createPostOpen}
             onClose={() => setCreatePostOpen(false)}
           />
+          <CreateStory
+            open={createStoryOpen}
+            onClose={() => setCreateStoryOpen(false)}
+            onCreated={() => {
+              bumpStoryRefreshKey();
+              setCreateStoryOpen(false);
+            }}
+          />
+          <AnimatePresence>
+            {showNav && (
+              <motion.div
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 24 }}
+                className="fixed right-4 bottom-24 lg:right-6 lg:bottom-6 z-[65] flex flex-col items-end gap-3"
+              >
+                <AnimatePresence>
+                  {quickActionsExpanded && (
+                    <>
+                      <motion.button
+                        initial={{ opacity: 0, y: 16, scale: 0.92 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 16, scale: 0.92 }}
+                        transition={{ duration: 0.18 }}
+                        onClick={() => setCreateStoryOpen(true)}
+                        className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-[var(--bg-surface)]/95 px-4 py-3 text-sm font-medium text-[var(--text-primary)] shadow-2xl backdrop-blur-xl"
+                      >
+                        <span className="text-[var(--text-secondary)] transition-colors group-hover:text-[var(--text-primary)]">
+                          История
+                        </span>
+                        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--accent-mint)]/15 text-[var(--accent-mint)]">
+                          <Camera className="h-5 w-5" />
+                        </span>
+                      </motion.button>
+                      <motion.button
+                        initial={{ opacity: 0, y: 16, scale: 0.92 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 16, scale: 0.92 }}
+                        transition={{ duration: 0.2, delay: 0.03 }}
+                        onClick={() => setCreatePostOpen(true)}
+                        className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-[var(--bg-surface)]/95 px-4 py-3 text-sm font-medium text-[var(--text-primary)] shadow-2xl backdrop-blur-xl"
+                      >
+                        <span className="text-[var(--text-secondary)] transition-colors group-hover:text-[var(--text-primary)]">
+                          Пост
+                        </span>
+                        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--accent-blue)]/15 text-[var(--accent-blue)]">
+                          <SquarePen className="h-5 w-5" />
+                        </span>
+                      </motion.button>
+                    </>
+                  )}
+                </AnimatePresence>
+
+                <motion.button
+                  type="button"
+                  whileTap={{ scale: 0.94 }}
+                  onClick={toggleQuickActions}
+                  aria-label={
+                    quickActionsExpanded
+                      ? "Закрыть быстрые действия"
+                      : "Открыть быстрые действия"
+                  }
+                  className="flex h-14 w-14 items-center justify-center rounded-[1.35rem] bg-gradient-to-br from-[var(--accent-blue)] via-sky-500 to-cyan-400 text-white shadow-[0_20px_40px_rgba(0,0,0,0.35)]"
+                >
+                  <motion.div
+                    animate={{ rotate: quickActionsExpanded ? 45 : 0 }}
+                    transition={{ duration: 0.18 }}
+                  >
+                    <Plus className="h-6 w-6" />
+                  </motion.div>
+                </motion.button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </>
       )}
       {activeCall && <CallOverlay />}

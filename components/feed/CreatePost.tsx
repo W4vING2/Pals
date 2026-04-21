@@ -2,7 +2,15 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
-import { ImageIcon, X, Loader2, AtSign } from "lucide-react";
+import {
+  AtSign,
+  Globe,
+  ImageIcon,
+  Loader2,
+  Lock,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Dialog,
@@ -14,9 +22,14 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
-import { useAuthStore } from "@/lib/store";
+import {
+  useAuthStore,
+  useFeedPreferencesStore,
+  type PostVisibility,
+} from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { Profile } from "@/lib/supabase";
+import { compressImage } from "@/lib/compress";
 
 interface CreatePostProps {
   open: boolean;
@@ -25,6 +38,7 @@ interface CreatePostProps {
 }
 
 const MAX_IMAGES = 6;
+const DRAFT_VERSION = 1;
 
 function getInitials(name: string): string {
   return name.split(" ").map((w) => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
@@ -38,14 +52,23 @@ function parseMentions(text: string): string[] {
 
 export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
   const { user, profile } = useAuthStore();
+  const { preferredPostVisibility, setPreferredPostVisibility } =
+    useFeedPreferencesStore();
   const [content, setContent] = useState("");
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [visibility, setVisibility] =
+    useState<PostVisibility>(preferredPostVisibility);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<{
+    tone: "muted" | "success" | "danger";
+    text: string;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // @mention autocomplete
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -55,6 +78,7 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
   const searchMentions = useCallback(async (query: string) => {
     if (!query) { setMentionResults([]); return; }
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
     const { data } = await supabase
       .from("profiles")
       .select("id, username, display_name, avatar_url")
@@ -100,6 +124,22 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
     }, 0);
   };
 
+  const resetComposer = useCallback(() => {
+    setContent("");
+    setImageFiles([]);
+    setImagePreviews([]);
+    setMentionQuery(null);
+    setMentionResults([]);
+    setError(null);
+    setStatus(null);
+    setVisibility(preferredPostVisibility);
+  }, [preferredPostVisibility]);
+
+  const getDraftKey = useCallback(() => {
+    if (!user) return null;
+    return `pals:create-post-draft:${user.id}`;
+  }, [user]);
+
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
@@ -109,11 +149,12 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
     const oversized = selected.find((f) => f.size > 10 * 1024 * 1024);
     if (oversized) { setError("Каждое изображение должно быть менее 10 МБ"); return; }
     setError(null);
-    setImageFiles((prev) => [...prev, ...selected]);
-    selected.forEach((file) => {
+    selected.forEach(async (file) => {
+      const compressed = await compressImage(file);
+      setImageFiles((prev) => [...prev, compressed]);
       const reader = new FileReader();
       reader.onload = () => setImagePreviews((prev) => [...prev, reader.result as string]);
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(compressed);
     });
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -127,7 +168,10 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
     if (!user || (!content.trim() && imageFiles.length === 0)) return;
     setSubmitting(true);
     setError(null);
+    setStatus({ tone: "muted", text: "Публикуем пост..." });
+    setPreferredPostVisibility(visibility);
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
 
     let imageUrls: string[] = [];
 
@@ -162,12 +206,14 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
         content: content.trim() || null,
         image_url: imageUrls.length > 0 ? imageUrls[0] : null,
         image_urls: imageUrls,
+        visibility,
       })
       .select()
       .single();
 
     if (insertError || !newPost) {
       setError("Не удалось создать пост");
+      setStatus({ tone: "danger", text: "Публикация не удалась. Черновик сохранён." });
     } else {
       // Handle @mentions
       const mentions = parseMentions(content);
@@ -204,11 +250,12 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
         }
       }
 
-      setContent("");
-      setImageFiles([]);
-      setImagePreviews([]);
-      setMentionQuery(null);
-      setMentionResults([]);
+      const draftKey = getDraftKey();
+      if (draftKey && typeof window !== "undefined") {
+        window.localStorage.removeItem(draftKey);
+      }
+      resetComposer();
+      setStatus({ tone: "success", text: "Пост опубликован" });
       onCreated?.();
       onClose();
     }
@@ -220,6 +267,66 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
     const el = textareaRef.current;
     if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }
   }, [content]);
+
+  useEffect(() => {
+    setVisibility(preferredPostVisibility);
+  }, [preferredPostVisibility]);
+
+  useEffect(() => {
+    if (!open || !user || typeof window === "undefined") return;
+    const draftKey = getDraftKey();
+    if (!draftKey) return;
+    try {
+      const raw = window.localStorage.getItem(draftKey);
+      if (!raw) return;
+      const draft = JSON.parse(raw) as {
+        version: number;
+        content?: string;
+        visibility?: PostVisibility;
+      };
+      if (draft.version !== DRAFT_VERSION) return;
+      if (draft.content) {
+        setContent(draft.content);
+        setStatus({ tone: "muted", text: "Черновик восстановлен" });
+      }
+      if (draft.visibility) {
+        setVisibility(draft.visibility);
+      }
+    } catch {
+      // Ignore broken draft payloads
+    }
+  }, [open, user, getDraftKey]);
+
+  useEffect(() => {
+    if (!open || !user || typeof window === "undefined") return;
+    const draftKey = getDraftKey();
+    if (!draftKey) return;
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+
+    draftTimerRef.current = setTimeout(() => {
+      if (!content.trim()) {
+        window.localStorage.removeItem(draftKey);
+        return;
+      }
+      window.localStorage.setItem(
+        draftKey,
+        JSON.stringify({
+          version: DRAFT_VERSION,
+          content,
+          visibility,
+        })
+      );
+      setStatus((current) =>
+        current?.tone === "success"
+          ? current
+          : { tone: "muted", text: "Черновик сохранён на этом устройстве" }
+      );
+    }, 320);
+
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    };
+  }, [open, user, content, visibility, getDraftKey]);
 
   const name = profile?.display_name ?? profile?.username ?? "Вы";
   const canSubmit = (content.trim().length > 0 || imageFiles.length > 0) && !submitting;
@@ -241,6 +348,47 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
             <div>
               <p className="text-sm font-semibold text-[var(--text-primary)]">{name}</p>
               {profile?.username && <p className="text-xs text-[var(--text-secondary)]">@{profile.username}</p>}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-elevated)]/70 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-[var(--text-primary)]">
+                  Кто увидит пост
+                </p>
+                <p className="mt-1 text-xs text-[var(--text-secondary)]">
+                  Этот выбор сохранится как ваш дефолт.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVisibility("public")}
+                  className={cn(
+                    "flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors",
+                    visibility === "public"
+                      ? "bg-[var(--accent-blue)] text-white"
+                      : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  )}
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  Публично
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibility("followers")}
+                  className={cn(
+                    "flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors",
+                    visibility === "followers"
+                      ? "bg-[var(--accent-blue)] text-white"
+                      : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  )}
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  Подписчики
+                </button>
+              </div>
             </div>
           </div>
 
@@ -321,6 +469,21 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
           )}
 
           {error && <p className="text-sm text-red-400 bg-red-400/10 rounded-xl px-3 py-2">{error}</p>}
+          {status && (
+            <div
+              className={cn(
+                "flex items-center gap-2 rounded-xl px-3 py-2 text-sm",
+                status.tone === "success" &&
+                  "bg-emerald-500/10 text-emerald-300",
+                status.tone === "danger" && "bg-red-500/10 text-red-300",
+                status.tone === "muted" &&
+                  "bg-[var(--bg-elevated)] text-[var(--text-secondary)]"
+              )}
+            >
+              <Sparkles className="h-4 w-4" />
+              <span>{status.text}</span>
+            </div>
+          )}
         </div>
 
         <DialogFooter className="flex-row items-center justify-between">
@@ -339,6 +502,21 @@ export function CreatePost({ open, onClose, onCreated }: CreatePostProps) {
             </button>
             {imageFiles.length > 0 && (
               <span className="text-xs text-[var(--text-secondary)]">{imageFiles.length}/{MAX_IMAGES}</span>
+            )}
+            {(content.trim().length > 0 || imageFiles.length > 0) && (
+              <button
+                type="button"
+                onClick={() => {
+                  const draftKey = getDraftKey();
+                  if (draftKey && typeof window !== "undefined") {
+                    window.localStorage.removeItem(draftKey);
+                  }
+                  resetComposer();
+                }}
+                className="rounded-xl px-3 py-2 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                Очистить
+              </button>
             )}
           </div>
           <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImageSelect} />

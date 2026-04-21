@@ -7,11 +7,15 @@ import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/hooks/useMessages";
 import { useCalls } from "@/hooks/useCalls";
 import { useMessagesStore } from "@/lib/store";
-import { ConversationList } from "@/components/messenger/ConversationList";
+import {
+  ConversationList,
+  type ChatSuggestion,
+} from "@/components/messenger/ConversationList";
 import { ChatWindow } from "@/components/messenger/ChatWindow";
 import { CreateGroup } from "@/components/messenger/CreateGroup";
 import { GroupSettings } from "@/components/messenger/GroupSettings";
 import { PageTransition } from "@/components/layout/PageTransition";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/lib/supabase";
 
@@ -32,11 +36,13 @@ export default function MessagesPage() {
     toggleReaction,
     retryMessage,
     uploadMessageImage,
+    getOrCreateConversation,
     deleteConversation,
     setDisappearTimer,
     pinMessage,
     unpinMessage,
     forwardMessage,
+    muteConversation,
   } = useMessages();
   const { initiateCall } = useCalls();
 
@@ -45,6 +51,8 @@ export default function MessagesPage() {
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const [groupSettingsOpen, setGroupSettingsOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<ChatSuggestion[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const processedRef = useRef<string | null>(null);
 
   // On mount: check URL for conversation param, or use pending from store
@@ -85,6 +93,155 @@ export default function MessagesPage() {
     loadMessages(id);
     setMobileView("chat");
   }, [loadMessages]);
+
+  const loadChatSuggestions = useCallback(async () => {
+    if (!user || loadingConversations) return;
+
+    setLoadingSuggestions(true);
+    const supabase = getSupabaseBrowserClient();
+    const existingDirectUserIds = new Set(
+      conversations
+        .filter((conversation) => !conversation.is_group)
+        .flatMap((conversation) =>
+          conversation.participants
+            .filter((participant) => participant.user_id !== user.id)
+            .map((participant) => participant.user_id)
+        )
+    );
+
+    try {
+      const [followingResult, followersResult, activityResult] =
+        await Promise.all([
+          supabase
+            .from("follows")
+            .select("following_id")
+            .eq("follower_id", user.id),
+          supabase
+            .from("follows")
+            .select("follower_id")
+            .eq("following_id", user.id),
+          supabase
+            .from("notifications")
+            .select("actor_id, type, created_at")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(30),
+        ]);
+
+      const scores = new Map<string, { score: number; reasons: Set<string> }>();
+      const addCandidate = (id: string | null | undefined, score: number, reason: string) => {
+        if (!id || id === user.id || existingDirectUserIds.has(id)) return;
+        const current = scores.get(id) ?? { score: 0, reasons: new Set<string>() };
+        current.score += score;
+        current.reasons.add(reason);
+        scores.set(id, current);
+      };
+
+      const followingIds = new Set(
+        followingResult.data?.map((item) => item.following_id) ?? []
+      );
+      const followerIds = new Set(
+        followersResult.data?.map((item) => item.follower_id) ?? []
+      );
+
+      followingIds.forEach((id) =>
+        addCandidate(id, followerIds.has(id) ? 42 : 24, followerIds.has(id) ? "взаимная подписка" : "вы подписаны")
+      );
+      followerIds.forEach((id) =>
+        addCandidate(id, followingIds.has(id) ? 42 : 22, followingIds.has(id) ? "взаимная подписка" : "подписан(а) на вас")
+      );
+      activityResult.data?.forEach((item) => {
+        const reason =
+          item.type === "comment"
+            ? "недавно комментировал(а) вас"
+            : item.type === "like"
+              ? "недавно реагировал(а)"
+              : item.type === "mention"
+                ? "недавно упоминал(а) вас"
+                : "недавняя активность";
+        addCandidate(item.actor_id, 12, reason);
+      });
+
+      let candidateIds = [...scores.entries()]
+        .sort((a, b) => b[1].score - a[1].score)
+        .slice(0, 8)
+        .map(([id]) => id);
+
+      if (candidateIds.length < 4) {
+        const { data: popularProfiles } = await supabase
+          .from("profiles")
+          .select("id")
+          .neq("id", user.id)
+          .order("followers_count", { ascending: false })
+          .limit(12);
+
+        for (const profile of popularProfiles ?? []) {
+          if (candidateIds.length >= 8) break;
+          if (existingDirectUserIds.has(profile.id) || scores.has(profile.id)) continue;
+          addCandidate(profile.id, 4, "популярный профиль");
+          candidateIds.push(profile.id);
+        }
+      }
+
+      candidateIds = [...new Set(candidateIds)];
+      if (candidateIds.length === 0) {
+        setSuggestions([]);
+        return;
+      }
+
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, username, display_name, avatar_url, is_online")
+        .in("id", candidateIds);
+
+      const profilesById = new Map(
+        (profiles ?? []).map((profile) => [profile.id, profile])
+      );
+      const nextSuggestions: ChatSuggestion[] = [];
+
+      for (const id of candidateIds) {
+        const profile = profilesById.get(id);
+        const candidate = scores.get(id);
+        if (!profile || !candidate) continue;
+        const [firstReason] = candidate.reasons;
+        nextSuggestions.push({
+          profile,
+          reason: firstReason
+            ? `Почему: ${firstReason}`
+            : "Почему: есть общие сигналы",
+          score: candidate.score,
+        });
+      }
+
+      nextSuggestions.sort((a, b) => b.score - a.score);
+
+      setSuggestions(nextSuggestions.slice(0, 5));
+    } catch (error) {
+      console.warn("loadChatSuggestions failed:", error);
+      setSuggestions([]);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  }, [conversations, loadingConversations, user]);
+
+  useEffect(() => {
+    loadChatSuggestions();
+  }, [loadChatSuggestions]);
+
+  const handleStartSuggestion = useCallback(
+    async (profileId: string) => {
+      const conversationId = await getOrCreateConversation(profileId);
+      if (!conversationId) return;
+      processedRef.current = conversationId;
+      await loadConversations();
+      await loadMessages(conversationId);
+      setMobileView("chat");
+      setSuggestions((prev) =>
+        prev.filter((suggestion) => suggestion.profile.id !== profileId)
+      );
+    },
+    [getOrCreateConversation, loadConversations, loadMessages]
+  );
 
   const handleBack = useCallback(() => {
     processedRef.current = null;
@@ -145,6 +302,10 @@ export default function MessagesPage() {
               onSelect={handleSelectConversation}
               onCreateGroup={() => setCreateGroupOpen(true)}
               onDeleteConversation={deleteConversation}
+              onMuteConversation={muteConversation}
+              suggestions={suggestions}
+              loadingSuggestions={loadingSuggestions}
+              onStartSuggestion={handleStartSuggestion}
             />
           </div>
         </div>
@@ -189,6 +350,10 @@ export default function MessagesPage() {
                     loading={loadingConversations}
                     onSelect={handleSelectConversation}
                     onCreateGroup={() => setCreateGroupOpen(true)}
+                    onMuteConversation={muteConversation}
+                    suggestions={suggestions}
+                    loadingSuggestions={loadingSuggestions}
+                    onStartSuggestion={handleStartSuggestion}
                   />
                 </div>
               </motion.div>

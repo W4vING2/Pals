@@ -2,6 +2,25 @@ import { create } from "zustand";
 import type { User } from "@supabase/supabase-js";
 import type { Profile } from "./supabase";
 
+function readStorage<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStorage<T>(key: string, value: T) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignore storage failures in private mode / quota pressure
+  }
+}
+
 // ── Auth Store ─────────────────────────────────────────────
 
 type AuthState = {
@@ -105,6 +124,33 @@ export const useCreatePostStore = create<CreatePostState>((set) => ({
   setOpen: (open) => set({ open }),
 }));
 
+// ── Quick Actions Store ────────────────────────────────────
+
+type QuickActionState = {
+  expanded: boolean;
+  createStoryOpen: boolean;
+  storyRefreshKey: number;
+  setExpanded: (expanded: boolean) => void;
+  toggleExpanded: () => void;
+  setCreateStoryOpen: (open: boolean) => void;
+  bumpStoryRefreshKey: () => void;
+};
+
+export const useQuickActionStore = create<QuickActionState>((set) => ({
+  expanded: false,
+  createStoryOpen: false,
+  storyRefreshKey: 0,
+  setExpanded: (expanded) => set({ expanded }),
+  toggleExpanded: () => set((state) => ({ expanded: !state.expanded })),
+  setCreateStoryOpen: (createStoryOpen) =>
+    set((state) => ({
+      createStoryOpen,
+      expanded: createStoryOpen ? false : state.expanded,
+    })),
+  bumpStoryRefreshKey: () =>
+    set((state) => ({ storyRefreshKey: state.storyRefreshKey + 1 })),
+}));
+
 // ── Messages Store ────────────────────────────────────────
 
 type MessagesStoreState = {
@@ -159,3 +205,50 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   incrementUnread: () => set((s) => ({ unreadCount: s.unreadCount + 1 })),
   clearUnread: () => set({ unreadCount: 0 }),
 }));
+
+// ── Product Preferences ────────────────────────────────────
+
+export type FeedDensity = "cozy" | "compact";
+export type PostVisibility = "public" | "followers";
+export type NotificationView =
+  | "important"
+  | "conversations"
+  | "activity"
+  | "all";
+
+type FeedPreferencesState = {
+  density: FeedDensity;
+  preferredPostVisibility: PostVisibility;
+  setDensity: (density: FeedDensity) => void;
+  setPreferredPostVisibility: (visibility: PostVisibility) => void;
+};
+
+export const useFeedPreferencesStore = create<FeedPreferencesState>((set) => ({
+  density: readStorage<FeedDensity>("pals-feed-density", "cozy"),
+  preferredPostVisibility: readStorage<PostVisibility>(
+    "pals-post-visibility",
+    "public"
+  ),
+  setDensity: (density) => {
+    writeStorage("pals-feed-density", density);
+    set({ density });
+  },
+  setPreferredPostVisibility: (preferredPostVisibility) => {
+    writeStorage("pals-post-visibility", preferredPostVisibility);
+    set({ preferredPostVisibility });
+  },
+}));
+
+type NotificationPreferencesState = {
+  view: NotificationView;
+  setView: (view: NotificationView) => void;
+};
+
+export const useNotificationPreferencesStore =
+  create<NotificationPreferencesState>((set) => ({
+    view: readStorage<NotificationView>("pals-notification-view", "important"),
+    setView: (view) => {
+      writeStorage("pals-notification-view", view);
+      set({ view });
+    },
+  }));

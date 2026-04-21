@@ -3,25 +3,36 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, ArrowUp, TrendingUp, Users as UsersIcon, RefreshCw } from "lucide-react";
+import {
+  AlignJustify,
+  ArrowUp,
+  PanelsTopLeft,
+  RefreshCw,
+  TrendingUp,
+  Users as UsersIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { useBlockedUsers } from "@/hooks/useBlockedUsers";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { FeedList } from "@/components/feed/FeedList";
-import { CreatePost } from "@/components/feed/CreatePost";
 import { PageTransition } from "@/components/layout/PageTransition";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { StoryCircles } from "@/components/stories/StoryCircles";
 import { StoryViewer } from "@/components/stories/StoryViewer";
-import { CreateStory } from "@/components/stories/CreateStory";
 import { AnimatedList } from "@/components/shared/AnimatedList";
 import { PostCard } from "@/components/feed/PostCard";
-import { useAuthStore } from "@/lib/store";
+import {
+  useAuthStore,
+  useCreatePostStore,
+  useFeedPreferencesStore,
+  useQuickActionStore,
+} from "@/lib/store";
 import { usePullToRefresh } from "@/hooks/usePullToRefresh";
 import { safeCache, cachePosts, getCachedPosts } from "@/lib/cache";
 import type { Post, Profile, Story } from "@/lib/supabase";
+import { filterVisiblePosts } from "@/lib/postVisibility";
 
 const PAGE_SIZE = 10;
 
@@ -41,7 +52,7 @@ export default function FeedPage() {
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
   const [newPostCount, setNewPostCount] = useState(0);
-  const pageRef = useRef(0);
+  const cursorRef = useRef<string | null>(null);
   const hasLoadedRef = useRef(false);
   const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set());
 
@@ -52,23 +63,19 @@ export default function FeedPage() {
   const [recommendedUsers, setRecommendedUsers] = useState<Profile[]>([]);
   const [followed, setFollowed] = useState<Set<string>>(new Set());
 
-  // Create post
-  const [createOpen, setCreateOpen] = useState(false);
-  const [fabVisible, setFabVisible] = useState(true);
-  const lastScrollY = useRef(0);
-
   // Stories
   const [viewerStories, setViewerStories] = useState<Story[] | null>(null);
   const [viewerStartIndex, setViewerStartIndex] = useState(0);
-  const [createStoryOpen, setCreateStoryOpen] = useState(false);
   const [storiesKey, setStoriesKey] = useState(0);
+  const { density, setDensity } = useFeedPreferencesStore();
+  const setCreatePostOpen = useCreatePostStore((s) => s.setOpen);
+  const setCreateStoryOpen = useQuickActionStore((s) => s.setCreateStoryOpen);
+  const storyRefreshKey = useQuickActionStore((s) => s.storyRefreshKey);
 
   // ── Following feed ─────────────────────────────────────────
   const loadPosts = useCallback(async (reset = false) => {
     const supabase = getSupabaseBrowserClient();
-    const currentPage = reset ? 0 : pageRef.current;
-    const from = currentPage * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+    if (!supabase) return;
 
     if (!hasLoadedRef.current) {
       // Show cached posts immediately before network response
@@ -80,33 +87,59 @@ export default function FeedPage() {
     }
 
     try {
-      const { data, error } = await supabase
+      const followingResult = user
+        ? await supabase
+            .from("follows")
+            .select("following_id")
+            .eq("follower_id", user.id)
+        : { data: [] };
+      const followingIds = new Set(
+        followingResult.data?.map((row) => row.following_id) ?? []
+      );
+      if (user?.id) followingIds.add(user.id);
+
+      let query = supabase
         .from("posts")
         .select("*, profiles:user_id (id, username, display_name, avatar_url)")
         .order("created_at", { ascending: false })
-        .range(from, to);
+        .limit(PAGE_SIZE);
+
+      if (!reset && cursorRef.current) {
+        query = query.lt("created_at", cursorRef.current);
+      }
+
+      const { data, error } = await query;
 
       if (!error && data) {
-        const newPosts = data as Post[];
+        const visiblePosts = filterVisiblePosts(
+          (data as Post[]).filter((post) => followingIds.has(post.user_id)),
+          user?.id,
+          followingIds
+        );
         if (reset) {
-          setPosts(newPosts);
-          pageRef.current = 1;
+          setPosts(visiblePosts);
+          cursorRef.current =
+            visiblePosts.length > 0
+              ? visiblePosts[visiblePosts.length - 1].created_at
+              : null;
         } else {
           setPosts((prev) => {
             const existingIds = new Set(prev.map((p) => p.id));
-            const unique = newPosts.filter((p) => !existingIds.has(p.id));
+            const unique = visiblePosts.filter((p) => !existingIds.has(p.id));
             return [...prev, ...unique];
           });
-          pageRef.current = currentPage + 1;
+          if (visiblePosts.length > 0) {
+            cursorRef.current = visiblePosts[visiblePosts.length - 1].created_at;
+          }
         }
-        setHasMore(newPosts.length === PAGE_SIZE);
+        setHasMore((data as Post[]).length === PAGE_SIZE);
         // Persist first page to IndexedDB
-        if (reset && newPosts.length > 0) {
-          safeCache(() => cachePosts(newPosts), undefined);
+        if (reset && visiblePosts.length > 0) {
+          safeCache(() => cachePosts(visiblePosts), undefined);
         }
 
-        if (user && newPosts.length > 0) {
-          const postIds = newPosts.map((p) => p.id);
+        if (user && visiblePosts.length > 0) {
+          const postIds = visiblePosts.map((p) => p.id);
           const { data: likeData } = await supabase
             .from("likes")
             .select("post_id")
@@ -135,6 +168,7 @@ export default function FeedPage() {
     if (!storeUser) return;
     setTrendingLoading(true);
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const [postsResult, followingResult] = await Promise.all([
@@ -150,11 +184,15 @@ export default function FeedPage() {
         .eq("follower_id", storeUser.id),
     ]);
 
-    if (postsResult.data) setTrendingPosts(postsResult.data as Post[]);
-
     const followingIds = new Set(followingResult.data?.map((f) => f.following_id) ?? []);
     followingIds.add(storeUser.id);
     setFollowed(new Set(followingResult.data?.map((f) => f.following_id) ?? []));
+
+    if (postsResult.data) {
+      setTrendingPosts(
+        filterVisiblePosts(postsResult.data as Post[], storeUser.id, followingIds)
+      );
+    }
 
     const { data: allUsers } = await supabase
       .from("profiles")
@@ -172,6 +210,7 @@ export default function FeedPage() {
   const toggleFollow = async (targetId: string) => {
     if (!storeUser) return;
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
     if (followed.has(targetId)) {
       await supabase.from("follows").delete().eq("follower_id", storeUser.id).eq("following_id", targetId);
       setFollowed((prev) => { const next = new Set(prev); next.delete(targetId); return next; });
@@ -195,10 +234,15 @@ export default function FeedPage() {
     if (tab === "trending" && !hasTrendingRef.current) loadTrending();
   }, [tab, loadTrending]);
 
+  useEffect(() => {
+    setStoriesKey(storyRefreshKey);
+  }, [storyRefreshKey]);
+
   // Real-time new posts
   useEffect(() => {
     if (!user) return;
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
     const channel = supabase
       .channel("feed")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" }, (payload) => {
@@ -236,24 +280,18 @@ export default function FeedPage() {
   const { pullDistance, isRefreshing, triggered } = usePullToRefresh({
     onRefresh: async () => {
       setNewPostCount(0);
-      if (tab === "following") await loadPosts(true);
-      else await loadTrending();
+      if (tab === "following") {
+        cursorRef.current = null;
+        await loadPosts(true);
+      } else {
+        await loadTrending();
+      }
     },
   });
 
-  // FAB hide/show on scroll
-  useEffect(() => {
-    const handleScroll = () => {
-      const currentY = window.scrollY;
-      setFabVisible(!(currentY > lastScrollY.current && currentY > 100));
-      lastScrollY.current = currentY;
-    };
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
   const handleLoadNewPosts = () => {
     setNewPostCount(0);
+    cursorRef.current = null;
     loadPosts(true);
   };
 
@@ -305,28 +343,56 @@ export default function FeedPage() {
         />
 
         {/* Tabs: Популярное / Подписки */}
-        <div className="flex items-center gap-1 mb-4 mt-4 bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-1">
+        <div className="mb-4 mt-4 flex items-center gap-3">
+          <div className="flex flex-1 items-center gap-1 bg-[var(--bg-surface)] border border-[var(--border)] rounded-2xl p-1">
+            <button
+              onClick={() => setTab("trending")}
+              className={cn(
+                "flex-1 py-2 px-4 text-sm font-medium rounded-xl transition-all",
+                tab === "trending"
+                  ? "bg-[var(--accent-blue)] text-white shadow-sm"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              )}
+            >
+              Популярное
+            </button>
+            <button
+              onClick={() => setTab("following")}
+              className={cn(
+                "flex-1 py-2 px-4 text-sm font-medium rounded-xl transition-all",
+                tab === "following"
+                  ? "bg-[var(--accent-blue)] text-white shadow-sm"
+                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              )}
+            >
+              Подписки
+            </button>
+          </div>
           <button
-            onClick={() => setTab("trending")}
+            type="button"
+            onClick={() => setDensity("cozy")}
             className={cn(
-              "flex-1 py-2 px-4 text-sm font-medium rounded-xl transition-all",
-              tab === "trending"
-                ? "bg-[var(--accent-blue)] text-white shadow-sm"
-                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              "flex h-11 w-11 items-center justify-center rounded-2xl border transition-colors",
+              density === "cozy"
+                ? "border-[var(--accent-blue)] bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]"
+                : "border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)]"
             )}
+            aria-label="Обычная плотность ленты"
           >
-            Популярное
+            <PanelsTopLeft className="h-4 w-4" />
           </button>
           <button
-            onClick={() => setTab("following")}
+            type="button"
+            onClick={() => setDensity("compact")}
             className={cn(
-              "flex-1 py-2 px-4 text-sm font-medium rounded-xl transition-all",
-              tab === "following"
-                ? "bg-[var(--accent-blue)] text-white shadow-sm"
-                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              "flex h-11 w-11 items-center justify-center rounded-2xl border transition-colors",
+              density === "compact"
+                ? "border-[var(--accent-blue)] bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]"
+                : "border-[var(--border)] bg-[var(--bg-surface)] text-[var(--text-secondary)]"
             )}
+            aria-label="Компактная плотность ленты"
           >
-            Подписки
+            <AlignJustify className="h-4 w-4" />
           </button>
         </div>
 
@@ -364,6 +430,19 @@ export default function FeedPage() {
               onLoadMore={() => loadPosts(false)}
               likedPostIds={likedPostIds}
               onDeletePost={(postId) => setPosts((prev) => prev.filter((p) => p.id !== postId))}
+              density={density}
+              emptyTitle="Лента подписок пока тихая"
+              emptyDescription="Подпишитесь на людей или опубликуйте свой первый пост, чтобы разогреть ленту."
+              emptyAction={
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button onClick={() => setCreatePostOpen(true)}>
+                    Опубликовать пост
+                  </Button>
+                  <Button variant="ghost" onClick={() => setTab("trending")}>
+                    Посмотреть популярное
+                  </Button>
+                </div>
+              }
             />
           </motion.div>
         ) : (
@@ -402,7 +481,7 @@ export default function FeedPage() {
               ) : (
                 <AnimatedList className="space-y-4">
                   {trendingPosts.map((post) => (
-                    <PostCard key={post.id} post={post} />
+                    <PostCard key={post.id} post={post} density={density} />
                   ))}
                 </AnimatedList>
               )}
@@ -447,7 +526,7 @@ export default function FeedPage() {
                       >
                         <Link href={`/profile/${u.username}`} className="flex items-center gap-3 flex-1 min-w-0">
                           {u.avatar_url ? (
-                            <img src={u.avatar_url} alt={name ?? u.username} className="w-10 h-10 rounded-full object-cover shrink-0" />
+                            <img src={u.avatar_url} alt={name ?? u.username} className="w-10 h-10 rounded-full object-cover shrink-0" loading="lazy" />
                           ) : (
                             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-emerald-500 flex items-center justify-center text-white text-sm font-semibold shrink-0">
                               {(name ?? u.username)[0]?.toUpperCase()}
@@ -476,32 +555,6 @@ export default function FeedPage() {
         )}
         </AnimatePresence>
 
-        {/* FAB — create post */}
-        <motion.button
-          onClick={() => setCreateOpen(true)}
-          className={cn(
-            "fixed bottom-20 right-4 z-40",
-            "w-14 h-14 rounded-full shadow-lg",
-            "bg-gradient-to-br from-[var(--accent-blue)] to-purple-700",
-            "text-white flex items-center justify-center",
-            "active:scale-95 transition-shadow",
-            "hover:shadow-xl"
-          )}
-          animate={{
-            scale: fabVisible ? 1 : 0,
-            opacity: fabVisible ? 1 : 0,
-          }}
-          transition={{ duration: 0.2, ease: "easeInOut" }}
-        >
-          <Plus className="w-6 h-6" />
-        </motion.button>
-
-        <CreatePost
-          open={createOpen}
-          onClose={() => setCreateOpen(false)}
-          onCreated={() => loadPosts(true)}
-        />
-
         {/* Story viewer */}
         {viewerStories && (
           <StoryViewer
@@ -512,14 +565,6 @@ export default function FeedPage() {
         )}
 
         {/* Create story */}
-        <CreateStory
-          open={createStoryOpen}
-          onClose={() => setCreateStoryOpen(false)}
-          onCreated={() => {
-            setCreateStoryOpen(false);
-            setStoriesKey((k) => k + 1);
-          }}
-        />
       </div>
     </PageTransition>
   );

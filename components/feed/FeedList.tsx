@@ -5,6 +5,8 @@ import { FileText } from "lucide-react";
 import { PostCard } from "./PostCard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import type { Post } from "@/lib/supabase";
+import type { FeedDensity } from "@/lib/store";
+import { cn } from "@/lib/utils";
 
 interface FeedListProps {
   posts: Post[];
@@ -13,6 +15,10 @@ interface FeedListProps {
   onLoadMore: () => void;
   likedPostIds?: Set<string>;
   onDeletePost?: (postId: string) => void;
+  density?: FeedDensity;
+  emptyTitle?: string;
+  emptyDescription?: string;
+  emptyAction?: React.ReactNode;
 }
 
 function PostSkeleton() {
@@ -43,7 +49,18 @@ function PostSkeleton() {
   );
 }
 
-export function FeedList({ posts, loading, hasMore, onLoadMore, likedPostIds, onDeletePost }: FeedListProps) {
+export function FeedList({
+  posts,
+  loading,
+  hasMore,
+  onLoadMore,
+  likedPostIds,
+  onDeletePost,
+  density = "cozy",
+  emptyTitle = "Пока ничего нет",
+  emptyDescription = "Подпишитесь на людей или создайте первый пост!",
+  emptyAction,
+}: FeedListProps) {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const handleObserver = useCallback(
@@ -71,17 +88,18 @@ export function FeedList({ posts, loading, hasMore, onLoadMore, likedPostIds, on
           <FileText className="w-8 h-8 text-[var(--text-secondary)] opacity-40" />
         </div>
         <div>
-          <p className="font-semibold text-[var(--text-primary)]">Пока ничего нет</p>
+          <p className="font-semibold text-[var(--text-primary)]">{emptyTitle}</p>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
-            Подпишитесь на людей или создайте первый пост!
+            {emptyDescription}
           </p>
         </div>
+        {emptyAction}
       </div>
     );
   }
 
   return (
-    <div className="space-y-3">
+    <div className={cn("space-y-3", density === "compact" && "space-y-2")}>
       {posts.map((post, idx) => (
         <PostCard
           key={post.id}
@@ -89,6 +107,7 @@ export function FeedList({ posts, loading, hasMore, onLoadMore, likedPostIds, on
           initialLiked={likedPostIds?.has(post.id)}
           priority={idx === 0 && !!post.image_url}
           onDelete={onDeletePost}
+          density={density}
         />
       ))}
 

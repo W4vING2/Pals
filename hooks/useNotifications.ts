@@ -51,11 +51,15 @@ export function useNotifications() {
         .update({ is_read: true })
         .eq("id", notificationId);
 
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n))
-      );
+      setNotifications((prev) => {
+        const next = prev.map((n) =>
+          n.id === notificationId ? { ...n, is_read: true } : n
+        );
+        setUnreadCount(next.filter((n) => !n.is_read).length);
+        return next;
+      });
     },
-    []
+    [setUnreadCount]
   );
 
   const markAllAsRead = useCallback(async () => {

@@ -11,6 +11,7 @@ import { PostGrid } from "@/components/profile/PostGrid";
 import { PageTransition } from "@/components/layout/PageTransition";
 import { Skeleton } from "@/components/ui/Skeleton";
 import type { Profile, Post } from "@/lib/supabase";
+import { filterVisiblePosts } from "@/lib/postVisibility";
 
 interface ProfilePageProps {
   params: Promise<{ username: string }>;
@@ -86,6 +87,16 @@ export default function ProfilePage({ params }: ProfilePageProps) {
 
       // Load posts
       setLoadingPosts(true);
+      const { data: followData } = user
+        ? await supabase
+            .from("follows")
+            .select("following_id")
+            .eq("follower_id", user.id)
+        : { data: [] };
+      const followingIds = new Set(
+        followData?.map((item) => item.following_id) ?? []
+      );
+      if (user?.id) followingIds.add(user.id);
       const { data: postsData } = await supabase
         .from("posts")
         .select("*, profiles:user_id (id, username, display_name, avatar_url)")
@@ -93,7 +104,9 @@ export default function ProfilePage({ params }: ProfilePageProps) {
         .order("created_at", { ascending: false });
 
       if (postsData) {
-        setPosts(postsData as Post[]);
+        setPosts(
+          filterVisiblePosts(postsData as Post[], user?.id, followingIds)
+        );
       }
       setLoadingPosts(false);
     };

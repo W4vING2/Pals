@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { TrendingUp, Users } from "lucide-react";
+import { TrendingUp, Users, Hash } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { PostCard } from "@/components/feed/PostCard";
@@ -12,7 +12,20 @@ import { AnimatedList } from "@/components/shared/AnimatedList";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/store";
+import { TopicCard } from "@/components/topics/TopicCard";
+import { CreateTopicModal } from "@/components/topics/CreateTopicModal";
 import type { Post, Profile } from "@/lib/supabase";
+import { filterVisiblePosts } from "@/lib/postVisibility";
+
+type Topic = {
+  id: string;
+  title: string;
+  description: string | null;
+  participant_count: number;
+  message_count: number;
+  expires_at: string;
+  tags: string[];
+};
 
 function SkeletonPostCard() {
   return (
@@ -49,6 +62,9 @@ export default function ExplorePage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { user: storeUser } = useAuthStore();
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [topicsLoading, setTopicsLoading] = useState(true);
+  const [showCreateTopic, setShowCreateTopic] = useState(false);
   const [trendingPosts, setTrendingPosts] = useState<Post[]>([]);
   const [recommendedUsers, setRecommendedUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +79,19 @@ export default function ExplorePage() {
   const loadData = useCallback(async () => {
     if (!storeUser) return;
     setLoading(true);
+    setTopicsLoading(true);
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+
+    // Load topics
+    const { data: topicsData } = await (supabase as any)
+      .from("topics")
+      .select("*")
+      .gt("expires_at", new Date().toISOString())
+      .order("participant_count", { ascending: false })
+      .limit(10);
+    if (topicsData) setTopics(topicsData as Topic[]);
+    setTopicsLoading(false);
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -81,13 +109,15 @@ export default function ExplorePage() {
         .eq("follower_id", storeUser.id),
     ]);
 
-    if (postsResult.data) {
-      setTrendingPosts(postsResult.data as Post[]);
-    }
-
     const followingIds = new Set(followingResult.data?.map((f) => f.following_id) ?? []);
     followingIds.add(storeUser.id); // exclude self
     setFollowed(new Set(followingResult.data?.map((f) => f.following_id) ?? []));
+
+    if (postsResult.data) {
+      setTrendingPosts(
+        filterVisiblePosts(postsResult.data as Post[], storeUser.id, followingIds)
+      );
+    }
 
     // Get top users not followed
     const { data: allUsers } = await supabase
@@ -113,6 +143,7 @@ export default function ExplorePage() {
   const toggleFollow = async (targetId: string) => {
     if (!storeUser) return;
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
     if (followed.has(targetId)) {
       await supabase
         .from("follows")
@@ -146,6 +177,67 @@ export default function ExplorePage() {
   return (
     <PageTransition>
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-8">
+        {/* Topics */}
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Hash className="w-5 h-5 text-[var(--accent-blue)]" />
+              <h2 className="text-lg font-bold text-[var(--text-primary)]">Топики</h2>
+            </div>
+            <button
+              onClick={() => setShowCreateTopic(true)}
+              className="flex items-center gap-1.5 text-sm font-medium text-[var(--accent-blue)] hover:opacity-70 transition-opacity"
+            >
+              + Создать
+            </button>
+          </div>
+
+          {topicsLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="rounded-2xl bg-[var(--bg-surface)] border border-[var(--border)] p-4 space-y-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded bg-[var(--bg-elevated)] animate-pulse" />
+                    <div className="h-3.5 w-28 rounded bg-[var(--bg-elevated)] animate-pulse" />
+                  </div>
+                  <div className="h-3 w-full rounded bg-[var(--bg-elevated)] animate-pulse" />
+                  <div className="flex gap-3">
+                    <div className="h-3 w-10 rounded bg-[var(--bg-elevated)] animate-pulse" />
+                    <div className="h-3 w-10 rounded bg-[var(--bg-elevated)] animate-pulse" />
+                    <div className="h-3 w-12 rounded bg-[var(--bg-elevated)] animate-pulse ml-auto" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : topics.length === 0 ? (
+            <div className="flex flex-col items-center py-10 gap-3 text-center bg-[var(--bg-surface)] rounded-2xl border border-[var(--border)]">
+              <Hash className="w-10 h-10 text-[var(--text-secondary)] opacity-20" />
+              <p className="text-sm text-[var(--text-secondary)]">Нет активных топиков</p>
+              <button
+                onClick={() => setShowCreateTopic(true)}
+                className="text-sm text-[var(--accent-blue)] font-medium"
+              >
+                Создать первый →
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {topics.map((topic) => (
+                <TopicCard key={topic.id} topic={topic} />
+              ))}
+            </div>
+          )}
+
+          <CreateTopicModal
+            open={showCreateTopic}
+            onClose={() => setShowCreateTopic(false)}
+            onCreated={(topic) => setTopics((prev) => [topic, ...prev])}
+          />
+        </section>
+
         {/* Trending posts */}
         <section>
           <div className="flex items-center gap-2 mb-4">

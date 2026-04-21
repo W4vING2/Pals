@@ -14,6 +14,9 @@ import { AnimatedList } from "@/components/shared/AnimatedList";
 import { cn } from "@/lib/utils";
 import type { Profile, Post } from "@/lib/supabase";
 import { useAuthStore } from "@/lib/store";
+import { filterVisiblePosts } from "@/lib/postVisibility";
+
+type Tab = "all" | "people" | "posts";
 
 function SkeletonUserRow() {
   return (
@@ -28,6 +31,12 @@ function SkeletonUserRow() {
   );
 }
 
+const TABS: { id: Tab; label: string }[] = [
+  { id: "all", label: "Все" },
+  { id: "people", label: "Люди" },
+  { id: "posts", label: "Посты" },
+];
+
 function SearchPageInner() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -35,6 +44,7 @@ function SearchPageInner() {
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") ?? "";
   const [query, setQuery] = useState(initialQuery);
+  const [activeTab, setActiveTab] = useState<Tab>("all");
   const [users, setUsers] = useState<Profile[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
@@ -46,6 +56,13 @@ function SearchPageInner() {
     }
   }, [user, authLoading, router]);
 
+  // Auto-switch to posts tab when query starts with #
+  useEffect(() => {
+    if (query.startsWith("#")) {
+      setActiveTab("posts");
+    }
+  }, [query]);
+
   const search = useCallback(async (q: string) => {
     if (!q.trim()) {
       setUsers([]);
@@ -54,39 +71,85 @@ function SearchPageInner() {
     }
     setLoading(true);
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
 
-    const [usersResult, postsResult] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("*")
-        .or(`username.ilike.%${q}%,display_name.ilike.%${q}%`)
-        .limit(10),
-      supabase
+    const isHashtag = q.startsWith("#");
+
+    if (isHashtag) {
+      const { data: followingData } = storeUser
+        ? await supabase
+            .from("follows")
+            .select("following_id")
+            .eq("follower_id", storeUser.id)
+        : { data: [] };
+      const followingIds = new Set(
+        followingData?.map((item) => item.following_id) ?? []
+      );
+      if (storeUser?.id) followingIds.add(storeUser.id);
+
+      // Hashtag search: only fetch posts matching the tag
+      const { data: postsData } = await supabase
         .from("posts")
         .select("*, profiles:user_id (id, username, display_name, avatar_url)")
         .ilike("content", `%${q}%`)
         .order("created_at", { ascending: false })
-        .limit(10),
-    ]);
+        .limit(20);
 
-    if (usersResult.data) {
-      setUsers(usersResult.data as Profile[]);
-      // Load follow status for found users
-      if (storeUser && usersResult.data.length > 0) {
-        const ids = usersResult.data.map((u: { id: string }) => u.id);
-        const { data: followData } = await supabase
-          .from("follows")
-          .select("following_id")
-          .eq("follower_id", storeUser.id)
-          .in("following_id", ids);
-        if (followData) {
-          setFollowed(new Set(followData.map((f) => f.following_id)));
+      setUsers([]);
+      if (postsData) {
+        setPosts(
+          filterVisiblePosts(postsData as Post[], storeUser?.id, followingIds)
+        );
+      }
+    } else {
+      const [usersResult, postsResult, followingResult] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("*")
+          .or(`username.ilike.%${q}%,display_name.ilike.%${q}%`)
+          .limit(10),
+        supabase
+          .from("posts")
+          .select("*, profiles:user_id (id, username, display_name, avatar_url)")
+          .ilike("content", `%${q}%`)
+          .order("created_at", { ascending: false })
+          .limit(10),
+        storeUser
+          ? supabase
+              .from("follows")
+              .select("following_id")
+              .eq("follower_id", storeUser.id)
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      if (usersResult.data) {
+        setUsers(usersResult.data as Profile[]);
+        // Load follow status for found users
+        if (storeUser && usersResult.data.length > 0) {
+          const ids = usersResult.data.map((u: { id: string }) => u.id);
+          const { data: followData } = await supabase
+            .from("follows")
+            .select("following_id")
+            .eq("follower_id", storeUser.id)
+            .in("following_id", ids);
+          if (followData) {
+            setFollowed(new Set(followData.map((f) => f.following_id)));
+          }
         }
       }
+      const followingIds = new Set(
+        followingResult.data?.map((item) => item.following_id) ?? []
+      );
+      if (storeUser?.id) followingIds.add(storeUser.id);
+      if (postsResult.data) {
+        setPosts(
+          filterVisiblePosts(postsResult.data as Post[], storeUser?.id, followingIds)
+        );
+      }
     }
-    if (postsResult.data) setPosts(postsResult.data as Post[]);
+
     setLoading(false);
-  }, []);
+  }, [storeUser]);
 
   // Sync query from URL params (e.g. when clicking a hashtag link)
   useEffect(() => {
@@ -107,6 +170,7 @@ function SearchPageInner() {
   const toggleFollow = async (targetId: string) => {
     if (!storeUser) return;
     const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
     if (followed.has(targetId)) {
       await supabase
         .from("follows")
@@ -127,14 +191,23 @@ function SearchPageInner() {
     }
   };
 
+  const isHashtagSearch = query.startsWith("#");
+
+  // Determine what to show based on active tab
+  const showUsers = !isHashtagSearch && (activeTab === "all" || activeTab === "people");
+  const showPosts = activeTab === "all" || activeTab === "posts";
+
+  const visibleUsers = showUsers ? users : [];
+  const visiblePosts = showPosts ? posts : [];
+
   const showEmpty =
-    !loading && query && users.length === 0 && posts.length === 0;
+    !loading && query && visibleUsers.length === 0 && visiblePosts.length === 0;
 
   return (
     <PageTransition>
       <div className="max-w-2xl mx-auto px-4 py-6">
-        {/* Sticky search bar */}
-        <div className="sticky top-0 z-10 pb-4 bg-[var(--bg-base)]">
+        {/* Sticky search bar + tabs */}
+        <div className="sticky top-0 z-10 pb-3 bg-[var(--bg-base)]">
           <motion.div
             className="relative"
             initial={false}
@@ -157,6 +230,26 @@ function SearchPageInner() {
               </button>
             )}
           </motion.div>
+
+          {/* Tabs — hidden when query starts with # (hashtag mode shows only posts) */}
+          {!isHashtagSearch && (
+            <div className="flex gap-2 mt-3">
+              {TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "px-4 py-1.5 rounded-full text-sm font-medium transition-colors",
+                    activeTab === tab.id
+                      ? "bg-[var(--accent-blue)] text-white"
+                      : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Loading */}
@@ -194,16 +287,16 @@ function SearchPageInner() {
         )}
 
         {/* Results */}
-        {!loading && (users.length > 0 || posts.length > 0) && (
+        {!loading && (visibleUsers.length > 0 || visiblePosts.length > 0) && (
           <div className="space-y-6">
             {/* User results */}
-            {users.length > 0 && (
+            {visibleUsers.length > 0 && (
               <section>
                 <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
                   Люди
                 </h2>
                 <AnimatedList className="space-y-0 bg-[var(--bg-surface)] rounded-3xl border border-[var(--border)] overflow-hidden">
-                  {users.map((u, idx) => {
+                  {visibleUsers.map((u, idx) => {
                     const name = u.display_name ?? u.username;
                     const isOwn = u.id === storeUser?.id;
                     return (
@@ -211,7 +304,7 @@ function SearchPageInner() {
                         key={u.id}
                         className={cn(
                           "flex items-center gap-3 p-4 hover:bg-[var(--bg-elevated)] transition-colors",
-                          idx < users.length - 1 &&
+                          idx < visibleUsers.length - 1 &&
                             "border-b border-[var(--border)]"
                         )}
                       >
@@ -258,13 +351,22 @@ function SearchPageInner() {
             )}
 
             {/* Post results */}
-            {posts.length > 0 && (
+            {visiblePosts.length > 0 && (
               <section>
                 <h2 className="text-sm font-semibold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
-                  Посты
+                  {isHashtagSearch ? (
+                    <span>
+                      Посты по{" "}
+                      <span className="text-[var(--accent-blue)]">{query}</span>
+                      {" · "}{visiblePosts.length}{" "}
+                      {visiblePosts.length === 1 ? "пост" : visiblePosts.length < 5 ? "поста" : "постов"}
+                    </span>
+                  ) : (
+                    "Посты"
+                  )}
                 </h2>
                 <AnimatedList className="space-y-4">
-                  {posts.map((post) => (
+                  {visiblePosts.map((post) => (
                     <PostCard key={post.id} post={post} />
                   ))}
                 </AnimatedList>
