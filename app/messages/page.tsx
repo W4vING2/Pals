@@ -283,14 +283,14 @@ export default function MessagesPage() {
 
   if (authLoading) {
     return (
-      <div className="h-[calc(100dvh-5rem)] lg:h-dvh flex items-center justify-center">
+      <div className="h-[calc(100dvh-6.25rem-env(safe-area-inset-bottom,0px))] lg:h-dvh flex items-center justify-center">
         <div className="w-10 h-10 rounded-full border-2 border-[var(--accent-blue)] border-t-transparent animate-spin" />
       </div>
     );
   }
 
   return (
-    <PageTransition className="h-[calc(100dvh-5rem)] lg:h-dvh">
+    <PageTransition className="h-[calc(100dvh-6.25rem-env(safe-area-inset-bottom,0px))] lg:h-dvh">
       <div className="h-full flex overflow-hidden bg-[var(--bg-base)]">
         {/* Desktop: both panels always visible */}
         <div className="hidden lg:block flex-shrink-0 w-80 xl:w-96 border-r border-[var(--border)] bg-[var(--bg-surface)]">

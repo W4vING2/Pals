@@ -212,6 +212,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isAuthPage = AUTH_PATHS.some((p) => pathname.startsWith(p));
   const showNav = !isAuthPage && !!user && !loading;
+  const isImmersiveRoute =
+    pathname.startsWith("/messages") || pathname.startsWith("/topics");
+  const showQuickActions = showNav && !isImmersiveRoute;
 
   return (
     <>
@@ -240,7 +243,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             }}
           />
           <AnimatePresence>
-            {showNav && (
+            {showQuickActions && (
               <motion.div
                 initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -332,7 +335,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main
         className={
           showNav
-            ? "min-h-dvh pb-24 lg:pb-0 lg:pl-60"
+            ? isImmersiveRoute
+              ? "min-h-dvh lg:pl-60"
+              : "min-h-dvh pb-24 lg:pb-0 lg:pl-60"
             : "min-h-dvh"
         }
       >
