@@ -72,17 +72,6 @@ export function useMessages() {
     }
   }, [cachedConversations]);
 
-  useEffect(() => {
-    if (!user || !activeConversationId) return;
-    setCachedMessagesForConversation(activeConversationId, messages);
-    void setCachedQuery(
-      user.id,
-      messagesCacheKey(activeConversationId),
-      messages,
-      CACHE_TTL.messages
-    );
-  }, [activeConversationId, messages, setCachedMessagesForConversation, user]);
-
   // ── E2E encryption setup ─────────────────────────────────
   const encKeyRef = useRef<CryptoKey | null>(null);
   const keysInitRef = useRef(false);

@@ -271,20 +271,42 @@ const initialAppData = {
   refreshingKeys: {},
 };
 
+function sameIdList<T extends { id: string }>(a: T[], b: T[]) {
+  return a.length === b.length && a.every((item, index) => item.id === b[index]?.id);
+}
+
+function sameStringList(a: string[], b: string[]) {
+  return a.length === b.length && a.every((item, index) => item === b[index]);
+}
+
 export const useAppDataStore = create<AppDataState>((set) => ({
   ...initialAppData,
   setFollowingPosts: (followingPosts, loadedAt = Date.now()) =>
-    set({ followingPosts, feedLoadedAt: loadedAt }),
+    set((state) =>
+      sameIdList(state.followingPosts, followingPosts) && state.feedLoadedAt === loadedAt
+        ? state
+        : { followingPosts, feedLoadedAt: loadedAt }
+    ),
   setTrendingData: (trendingPosts, recommendedUsers, loadedAt = Date.now()) =>
-    set({ trendingPosts, recommendedUsers, trendingLoadedAt: loadedAt }),
+    set((state) =>
+      sameIdList(state.trendingPosts, trendingPosts) &&
+      sameIdList(state.recommendedUsers, recommendedUsers) &&
+      state.trendingLoadedAt === loadedAt
+        ? state
+        : { trendingPosts, recommendedUsers, trendingLoadedAt: loadedAt }
+    ),
   setLikedPostIds: (ids, merge = false) =>
     set((state) => {
       const next = new Set(merge ? state.likedPostIds : []);
       for (const id of ids) next.add(id);
-      return { likedPostIds: [...next] };
+      const likedPostIds = [...next];
+      return sameStringList(state.likedPostIds, likedPostIds) ? state : { likedPostIds };
     }),
   removeLikedPostId: (id) =>
-    set((state) => ({ likedPostIds: state.likedPostIds.filter((item) => item !== id) })),
+    set((state) => {
+      if (!state.likedPostIds.includes(id)) return state;
+      return { likedPostIds: state.likedPostIds.filter((item) => item !== id) };
+    }),
   upsertFollowingPost: (post) =>
     set((state) => {
       const exists = state.followingPosts.some((item) => item.id === post.id);
@@ -309,7 +331,11 @@ export const useAppDataStore = create<AppDataState>((set) => ({
       trendingPosts: state.trendingPosts.filter((post) => post.id !== id),
     })),
   setConversations: (conversations, loadedAt = Date.now()) =>
-    set({ conversations, conversationsLoadedAt: loadedAt }),
+    set((state) =>
+      sameIdList(state.conversations, conversations) && state.conversationsLoadedAt === loadedAt
+        ? state
+        : { conversations, conversationsLoadedAt: loadedAt }
+    ),
   patchConversation: (id, updater) =>
     set((state) => ({
       conversations: state.conversations.map((conversation) =>
@@ -317,12 +343,21 @@ export const useAppDataStore = create<AppDataState>((set) => ({
       ),
     })),
   removeConversation: (id) =>
-    set((state) => ({ conversations: state.conversations.filter((c) => c.id !== id) })),
+    set((state) => {
+      if (!state.conversations.some((c) => c.id === id)) return state;
+      return { conversations: state.conversations.filter((c) => c.id !== id) };
+    }),
   setMessagesForConversation: (conversationId, messages, loadedAt = Date.now()) =>
-    set((state) => ({
-      messagesByConversation: { ...state.messagesByConversation, [conversationId]: messages },
-      messagesLoadedAt: { ...state.messagesLoadedAt, [conversationId]: loadedAt },
-    })),
+    set((state) => {
+      const current = state.messagesByConversation[conversationId] ?? [];
+      if (sameIdList(current, messages) && state.messagesLoadedAt[conversationId] === loadedAt) {
+        return state;
+      }
+      return {
+        messagesByConversation: { ...state.messagesByConversation, [conversationId]: messages },
+        messagesLoadedAt: { ...state.messagesLoadedAt, [conversationId]: loadedAt },
+      };
+    }),
   appendMessage: (conversationId, message) =>
     set((state) => {
       const current = state.messagesByConversation[conversationId] ?? [];
@@ -353,7 +388,11 @@ export const useAppDataStore = create<AppDataState>((set) => ({
       },
     })),
   setNotifications: (notifications, loadedAt = Date.now()) =>
-    set({ notifications, notificationsLoadedAt: loadedAt }),
+    set((state) =>
+      sameIdList(state.notifications, notifications) && state.notificationsLoadedAt === loadedAt
+        ? state
+        : { notifications, notificationsLoadedAt: loadedAt }
+    ),
   upsertNotification: (notification) =>
     set((state) => ({
       notifications: [
@@ -376,9 +415,25 @@ export const useAppDataStore = create<AppDataState>((set) => ({
       profilesByUsername: { ...state.profilesByUsername, [username]: entry },
     })),
   setStories: (storyGroups, ownStoryProfile, viewedIds, loadedAt = Date.now()) =>
-    set({ storyGroups, ownStoryProfile, viewedStoryIds: [...viewedIds], storiesLoadedAt: loadedAt }),
+    set((state) => {
+      const viewedStoryIds = [...viewedIds];
+      if (
+        sameIdList(state.storyGroups.map((group) => ({ id: group.userId })), storyGroups.map((group) => ({ id: group.userId }))) &&
+        state.ownStoryProfile?.id === ownStoryProfile?.id &&
+        sameStringList(state.viewedStoryIds, viewedStoryIds) &&
+        state.storiesLoadedAt === loadedAt
+      ) {
+        return state;
+      }
+      return { storyGroups, ownStoryProfile, viewedStoryIds, storiesLoadedAt: loadedAt };
+    }),
   setBlockedIds: (ids, loadedAt = Date.now()) =>
-    set({ blockedIds: [...ids], blockedLoadedAt: loadedAt }),
+    set((state) => {
+      const blockedIds = [...ids];
+      return sameStringList(state.blockedIds, blockedIds) && state.blockedLoadedAt === loadedAt
+        ? state
+        : { blockedIds, blockedLoadedAt: loadedAt };
+    }),
   setRefreshing: (key, refreshing) =>
     set((state) => ({
       refreshingKeys: { ...state.refreshingKeys, [key]: refreshing },
