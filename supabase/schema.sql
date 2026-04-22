@@ -799,5 +799,7 @@ create policy "Users can view own subscriptions"
   on public.push_subscriptions for select using (user_id = auth.uid());
 create policy "Users can create subscriptions"
   on public.push_subscriptions for insert with check (auth.uid() = user_id);
+create policy "Users can update subscriptions"
+  on public.push_subscriptions for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "Users can delete subscriptions"
   on public.push_subscriptions for delete using (auth.uid() = user_id);

@@ -3,6 +3,15 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+const ANDROID_PUSH_CHANNEL_ID = "pals_messages";
+
+type PushSubscriptionInsert = {
+  user_id: string;
+  endpoint: string;
+  keys_p256dh: string;
+  keys_auth: string;
+  platform: string;
+};
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -19,6 +28,70 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 
 function isCapacitorNative(): boolean {
   return typeof window !== "undefined" && !!(window as any).Capacitor?.isNativePlatform?.();
+}
+
+function isCapacitorAndroid(): boolean {
+  return typeof window !== "undefined" && (window as any).Capacitor?.getPlatform?.() === "android";
+}
+
+async function savePushSubscription(subscription: PushSubscriptionInsert): Promise<boolean> {
+  const supabase = getSupabaseBrowserClient();
+
+  const { data: existing, error: selectError } = await supabase
+    .from("push_subscriptions")
+    .select("id")
+    .eq("user_id", subscription.user_id)
+    .eq("endpoint", subscription.endpoint)
+    .maybeSingle();
+
+  if (selectError) {
+    console.error("Push: failed to check subscription:", selectError);
+    return false;
+  }
+
+  if (existing) return true;
+
+  const { error } = await supabase.from("push_subscriptions").insert(subscription);
+
+  if (error) {
+    if (error.code === "23505") return true;
+    console.error("Push: failed to save subscription:", error);
+    return false;
+  }
+
+  return true;
+}
+
+async function saveCapacitorToken(userId: string, fcmToken: string): Promise<boolean> {
+  return savePushSubscription({
+    user_id: userId,
+    endpoint: `fcm:${fcmToken}`,
+    keys_p256dh: "fcm",
+    keys_auth: "fcm",
+    platform: "android",
+  });
+}
+
+async function ensureAndroidPushChannel(
+  PushNotifications: typeof import("@capacitor/push-notifications").PushNotifications
+): Promise<void> {
+  if (!isCapacitorAndroid()) return;
+
+  try {
+    await PushNotifications.createChannel({
+      id: ANDROID_PUSH_CHANNEL_ID,
+      name: "Messages",
+      description: "New chat messages",
+      importance: 4,
+      visibility: 1,
+      lights: true,
+      lightColor: "#a855f7",
+      vibration: true,
+    });
+  } catch (err) {
+    // Channel creation is Android-only and idempotent; registration can still continue.
+    console.warn("Push: failed to create Android notification channel:", err);
+  }
 }
 
 // ── Public API ──────────────────────────────────────────────
@@ -58,7 +131,7 @@ export async function isSubscribedToPush(): Promise<boolean> {
 
 export async function subscribeToPush(userId: string): Promise<boolean> {
   if (isCapacitorNative()) {
-    return subscribeCapacitor(userId);
+    return registerCapacitorPush(userId, { requestPermission: true });
   }
   return subscribeWeb(userId);
 }
@@ -72,44 +145,54 @@ export async function unsubscribeFromPush(userId: string): Promise<boolean> {
 
 // ── Capacitor (FCM) ─────────────────────────────────────────
 
-async function subscribeCapacitor(userId: string): Promise<boolean> {
+export async function registerCapacitorPush(
+  userId: string,
+  options: { requestPermission?: boolean } = {}
+): Promise<boolean> {
   try {
     const { PushNotifications } = await import("@capacitor/push-notifications");
 
-    // Request permission
-    const permResult = await PushNotifications.requestPermissions();
+    let permResult = await PushNotifications.checkPermissions();
+    if (options.requestPermission || permResult.receive === "prompt") {
+      permResult = await PushNotifications.requestPermissions();
+    }
     if (permResult.receive !== "granted") return false;
 
-    // Register for push
-    await PushNotifications.register();
+    await ensureAndroidPushChannel(PushNotifications);
 
     // Wait for FCM token
     return new Promise<boolean>((resolve) => {
-      const timeout = setTimeout(() => resolve(false), 10000);
-
-      PushNotifications.addListener("registration", async (token) => {
+      let settled = false;
+      let cleanup: (() => void) | undefined;
+      const settle = (value: boolean) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timeout);
-        const fcmToken = token.value;
+        cleanup?.();
+        resolve(value);
+      };
 
-        // Save FCM token to database
-        const supabase = getSupabaseBrowserClient();
-        const { error } = await supabase.from("push_subscriptions").upsert(
-          {
-            user_id: userId,
-            endpoint: `fcm:${fcmToken}`,
-            keys_p256dh: "fcm",
-            keys_auth: "fcm",
-            platform: "android",
-          },
-          { onConflict: "user_id,endpoint" }
-        );
+      const timeout = setTimeout(() => settle(false), 10000);
 
-        resolve(!error);
+      Promise.all([
+        PushNotifications.addListener("registration", async (token) => {
+          settle(await saveCapacitorToken(userId, token.value));
+        }),
+        PushNotifications.addListener("registrationError", (error) => {
+          console.error("Push: native registration error:", error);
+          settle(false);
+        }),
+      ]).then(([registrationHandle, errorHandle]) => {
+        cleanup = () => {
+          registrationHandle.remove();
+          errorHandle.remove();
+        };
+        if (settled) cleanup();
       });
 
-      PushNotifications.addListener("registrationError", () => {
-        clearTimeout(timeout);
-        resolve(false);
+      PushNotifications.register().catch((err) => {
+        console.error("Push: native register failed:", err);
+        settle(false);
       });
     });
   } catch (err) {
@@ -174,25 +257,13 @@ async function subscribeWeb(userId: string): Promise<boolean> {
       return false;
     }
 
-    const supabase = getSupabaseBrowserClient();
-    const { error } = await supabase.from("push_subscriptions").upsert(
-      {
-        user_id: userId,
-        endpoint: sub.endpoint,
-        keys_p256dh: sub.keys.p256dh ?? "",
-        keys_auth: sub.keys.auth ?? "",
-        platform: "web",
-      },
-      { onConflict: "user_id,endpoint" }
-    );
-
-    if (error) {
-      console.error("Push: failed to save subscription to DB:", error);
-      return false;
-    }
-
-    // console.log("Push: subscribed successfully");
-    return true;
+    return savePushSubscription({
+      user_id: userId,
+      endpoint: sub.endpoint,
+      keys_p256dh: sub.keys.p256dh ?? "",
+      keys_auth: sub.keys.auth ?? "",
+      platform: "web",
+    });
   } catch (err) {
     console.error("Web push subscribe failed:", err);
     return false;

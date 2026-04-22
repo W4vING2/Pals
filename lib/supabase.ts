@@ -264,7 +264,7 @@ export type Database = {
       push_subscriptions: TableDef<
         { id: string; user_id: string; endpoint: string; keys_p256dh: string; keys_auth: string; platform: string; created_at: string },
         { user_id: string; endpoint: string; keys_p256dh: string; keys_auth: string; platform?: string },
-        never
+        Partial<{ endpoint: string; keys_p256dh: string; keys_auth: string; platform: string }>
       >;
     };
     Views: Record<string, never>;

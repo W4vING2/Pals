@@ -7,7 +7,7 @@ import { Camera, Plus, SquarePen, X } from "lucide-react";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { MobileNavBar } from "./MobileNavBar";
 import { useAuth } from "@/hooks/useAuth";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { registerCapacitorPush } from "@/lib/push";
 import { usePresence } from "@/hooks/usePresence";
 import { useRealtimeBadges } from "@/hooks/useRealtimeBadges";
 import {
@@ -126,25 +126,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const isNative = !!(window as any).Capacitor?.isNativePlatform?.();
     if (!isNative) return;
 
+    let cleanup: (() => void) | undefined;
+    let cancelled = false;
+
     (async () => {
       try {
         const { PushNotifications } = await import("@capacitor/push-notifications");
 
         // Listen for notification taps
-        PushNotifications.addListener("pushNotificationActionPerformed", (notification) => {
+        const actionHandle = await PushNotifications.addListener("pushNotificationActionPerformed", (notification) => {
           const url = notification.notification?.data?.url;
           if (url) window.location.href = url;
         });
-
-        // Re-register if already subscribed (keeps FCM token fresh)
-        const perms = await PushNotifications.checkPermissions();
-        if (perms.receive === "granted") {
-          await PushNotifications.register();
+        cleanup = () => actionHandle.remove();
+        if (cancelled) {
+          cleanup();
+          return;
         }
+
+        // Re-register and persist the latest FCM token if permissions were granted earlier.
+        await registerCapacitorPush(user.id);
       } catch {
         // Plugin not available
       }
     })();
+
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
   }, [user]);
 
   // Handle deep link for OAuth redirect on Capacitor native
