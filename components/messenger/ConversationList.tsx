@@ -128,9 +128,9 @@ export function ConversationList({
   });
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col bg-[#030307] pb-28 lg:bg-transparent lg:pb-0">
       {/* Search + new group */}
-      <div className="p-3 border-b border-[var(--border)] space-y-2">
+      <div className="space-y-2 border-b border-white/8 p-3 lg:border-[var(--border)]">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)]" />
           <input

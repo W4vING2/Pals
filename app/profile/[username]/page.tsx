@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/hooks/useMessages";
+import { useCalls } from "@/hooks/useCalls";
 import {
   CACHE_TTL,
   useAppDataStore,
@@ -52,6 +53,7 @@ export default function ProfilePage({ params }: ProfilePageProps) {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { getOrCreateConversation } = useMessages();
+  const { initiateCall } = useCalls();
   const profileCache = useAppDataStore((s) => s.profilesByUsername[username]);
   const setProfileCache = useAppDataStore((s) => s.setProfileCache);
   const setMobileNavHidden = useChromeStore((s) => s.setMobileNavHidden);
@@ -160,6 +162,14 @@ export default function ProfilePage({ params }: ProfilePageProps) {
     }
   };
 
+  const handleCallClick = async (type: "voice" | "video") => {
+    if (!profile || !user) return;
+    const convId = await getOrCreateConversation(profile.id);
+    if (convId) {
+      await initiateCall(convId, profile.id, type);
+    }
+  };
+
   if (authLoading || loadingProfile) {
     return (
       <div className="min-h-dvh bg-[#030307] text-white">
@@ -190,6 +200,7 @@ export default function ProfilePage({ params }: ProfilePageProps) {
           profile={profile}
           isOwnProfile={isOwn}
           onMessageClick={handleMessageClick}
+          onCallClick={handleCallClick}
           onProfileUpdated={(nextProfile) => {
             setProfile(nextProfile);
             setProfileCache(username, {

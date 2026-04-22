@@ -26,18 +26,15 @@ import {
   Ban,
   Camera,
   CalendarDays,
-  Grid2X2,
   Link as LinkIcon,
   Loader2,
   MapPin,
   MessageCircle,
-  MoreHorizontal,
+  Phone,
   Search,
-  Settings,
+  Video,
   UserCheck,
   UserPlus,
-  Users,
-  X,
 } from "lucide-react";
 import type { Profile, Story } from "@/lib/supabase";
 
@@ -45,6 +42,7 @@ interface ProfileHeaderProps {
   profile: Profile;
   isOwnProfile: boolean;
   onMessageClick?: () => void;
+  onCallClick?: (type: "voice" | "video") => void;
   onProfileUpdated?: (profile: Profile) => void;
 }
 
@@ -85,7 +83,7 @@ function ProfileAvatar({
   onAvatarClick: () => void;
 }) {
   return (
-    <div className="relative mx-auto h-36 w-36">
+    <div className="relative mx-auto h-28 w-28 sm:h-32 sm:w-32">
       <motion.div
         className="absolute -inset-1 rounded-full"
         style={{
@@ -100,7 +98,7 @@ function ProfileAvatar({
         type="button"
         onClick={hasStories ? onOpenStories : undefined}
         className={cn(
-          "relative h-full w-full overflow-hidden rounded-full border-[6px] border-[#030307] bg-gradient-to-br from-[#8aa3ff] via-[#6b67ff] to-[#d64cff] text-5xl font-bold text-white shadow-[0_28px_60px_rgba(91,74,255,0.36)]",
+          "relative h-full w-full overflow-hidden rounded-full border-[5px] border-[#030307] bg-gradient-to-br from-[#8aa3ff] via-[#6b67ff] to-[#d64cff] text-4xl font-bold text-white shadow-[0_28px_60px_rgba(91,74,255,0.36)]",
           hasStories && "cursor-pointer"
         )}
         aria-label={hasStories ? "Открыть истории" : undefined}
@@ -119,7 +117,7 @@ function ProfileAvatar({
           type="button"
           onClick={onAvatarClick}
           disabled={uploadingAvatar}
-          className="absolute bottom-2 right-2 z-10 flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-[#1b1b22]/88 text-white shadow-2xl backdrop-blur-2xl transition active:scale-95"
+          className="absolute bottom-1 right-1 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-[#1b1b22]/88 text-white shadow-2xl backdrop-blur-2xl transition active:scale-95"
           aria-label="Сменить аватар"
         >
           {uploadingAvatar ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
@@ -135,13 +133,13 @@ export function ProfileHeader({
   profile,
   isOwnProfile,
   onMessageClick,
+  onCallClick,
   onProfileUpdated,
 }: ProfileHeaderProps) {
   const { user, setProfile: setStoreProfile } = useAuthStore();
   const router = useRouter();
   const { isBlocked, blockUser, unblockUser } = useBlockedUsers();
   const blocked = isBlocked(profile.id);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [profileStories, setProfileStories] = useState<Story[] | null>(null);
   const [hasStories, setHasStories] = useState(false);
   const [following, setFollowing] = useState(false);
@@ -162,7 +160,6 @@ export function ProfileHeader({
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   const name = profile.display_name ?? profile.username;
   const birthday = formatBirthday(profile.date_of_birth);
@@ -196,15 +193,6 @@ export function ProfileHeader({
       .order("created_at", { ascending: true });
     if (data && data.length > 0) setProfileStories(data as Story[]);
   };
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [menuOpen]);
 
   useEffect(() => {
     if (!user || isOwnProfile) return;
@@ -359,8 +347,13 @@ export function ProfileHeader({
     document.getElementById("profile-posts")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const handleBlockToggle = async () => {
+    if (blocked) await unblockUser(profile.id);
+    else await blockUser(profile.id);
+  };
+
   return (
-    <section className="relative overflow-hidden bg-[#030307] px-4 pb-6 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] text-white">
+    <section className="relative overflow-hidden bg-[#030307] px-4 pb-5 pt-[calc(env(safe-area-inset-top,0px)+0.6rem)] text-white">
       <div className="pointer-events-none absolute inset-0">
         {profile.cover_url ? (
           <Image src={profile.cover_url} alt="" fill className="object-cover opacity-20 blur-xl scale-110" sizes="100vw" />
@@ -380,13 +373,7 @@ export function ProfileHeader({
 
         {isOwnProfile ? (
           <div className="flex items-center rounded-full border border-white/10 bg-white/[0.08] p-1.5 shadow-[0_16px_34px_rgba(0,0,0,0.34)] backdrop-blur-2xl">
-            <button
-              type="button"
-              onClick={() => coverInputRef.current?.click()}
-              disabled={uploadingCover}
-              className="flex h-10 w-10 items-center justify-center rounded-full text-white/80 transition hover:bg-white/10 hover:text-white"
-              aria-label="Сменить обложку"
-            >
+            <button type="button" onClick={() => coverInputRef.current?.click()} disabled={uploadingCover} className="flex h-10 w-10 items-center justify-center rounded-full text-white/80 transition hover:bg-white/10 hover:text-white" aria-label="Сменить обложку">
               {uploadingCover ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
             </button>
             <button
@@ -398,45 +385,14 @@ export function ProfileHeader({
             </button>
           </div>
         ) : (
-          <div className="relative" ref={menuRef}>
-            <button
-              type="button"
-              onClick={() => setMenuOpen((v) => !v)}
-              className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.09] text-white shadow-[0_16px_34px_rgba(0,0,0,0.34)] backdrop-blur-2xl transition active:scale-95"
-              aria-label="Еще"
-            >
-              <MoreHorizontal className="h-6 w-6" />
-            </button>
-            <AnimatePresence>
-              {menuOpen && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.92, y: -4 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.92, y: -4 }}
-                  className="absolute right-0 top-full z-40 mt-2 min-w-[190px] overflow-hidden rounded-2xl border border-white/10 bg-[#18181f]/94 shadow-2xl backdrop-blur-2xl"
-                >
-                  <button
-                    onClick={async () => {
-                      if (blocked) await unblockUser(profile.id);
-                      else await blockUser(profile.id);
-                      setMenuOpen(false);
-                    }}
-                    className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-sm text-red-300 transition hover:bg-red-500/10"
-                  >
-                    <Ban className="h-4 w-4" />
-                    {blocked ? "Разблокировать" : "Заблокировать"}
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          <div className="h-12 w-12" aria-hidden="true" />
         )}
       </div>
 
       <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
       <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
 
-      <div className="relative z-10 mx-auto mt-5 max-w-2xl text-center">
+      <div className="relative z-10 mx-auto mt-3 max-w-2xl text-center">
         <ProfileAvatar
           profile={profile}
           name={name}
@@ -447,85 +403,103 @@ export function ProfileHeader({
           onAvatarClick={() => avatarInputRef.current?.click()}
         />
 
-        <h1 className="mt-5 text-[34px] font-semibold leading-tight tracking-[0.01em] text-white sm:text-[38px]">
+        <h1 className="mt-4 text-[29px] font-semibold leading-tight tracking-[0.01em] text-white sm:text-[34px]">
           {name}
         </h1>
-        <div className="mt-1 flex items-center justify-center gap-2 text-[22px] text-white/58">
+        <div className="mt-1 flex items-center justify-center gap-2 text-[18px] text-white/58">
           {isOwnProfile ? <span className="rounded-md bg-[#d95cff]/80 px-1.5 text-sm font-bold text-white">1</span> : null}
           <span>{statusLabel}</span>
         </div>
       </div>
 
       {!isOwnProfile && (
-        <div className="relative z-10 mx-auto mt-9 grid max-w-2xl grid-cols-4 gap-3">
+        <div className="relative z-10 mx-auto mt-6 grid max-w-2xl grid-cols-3 gap-2.5 sm:grid-cols-6">
           <button
             type="button"
             onClick={onMessageClick}
             disabled={blocked}
-            className="flex h-20 flex-col items-center justify-center gap-1 rounded-[1.5rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95 disabled:opacity-45"
+            className="flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95 disabled:opacity-45"
           >
-            <MessageCircle className="h-7 w-7" />
-            <span className="text-sm">message</span>
+            <MessageCircle className="h-5 w-5" />
+            <span className="text-xs">message</span>
           </button>
           <button
             type="button"
             onClick={toggleFollow}
             disabled={followPending || blocked}
-            className="flex h-20 flex-col items-center justify-center gap-1 rounded-[1.5rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95 disabled:opacity-45"
+            className="flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95 disabled:opacity-45"
           >
-            {followPending ? <Loader2 className="h-7 w-7 animate-spin" /> : following ? <UserCheck className="h-7 w-7" /> : <UserPlus className="h-7 w-7" />}
-            <span className="text-sm">{following ? "following" : "follow"}</span>
+            {followPending ? <Loader2 className="h-5 w-5 animate-spin" /> : following ? <UserCheck className="h-5 w-5" /> : <UserPlus className="h-5 w-5" />}
+            <span className="text-xs">{following ? "following" : "follow"}</span>
           </button>
           <button
             type="button"
             onClick={scrollToPosts}
-            className="flex h-20 flex-col items-center justify-center gap-1 rounded-[1.5rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95"
+            className="flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95"
           >
-            <Search className="h-7 w-7" />
-            <span className="text-sm">posts</span>
+            <Search className="h-5 w-5" />
+            <span className="text-xs">posts</span>
           </button>
           <button
             type="button"
-            onClick={() => setMenuOpen((v) => !v)}
-            className="flex h-20 flex-col items-center justify-center gap-1 rounded-[1.5rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95"
+            onClick={handleBlockToggle}
+            className="flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] bg-black/18 text-[#ff6d91] backdrop-blur-xl transition active:scale-95"
           >
-            <MoreHorizontal className="h-7 w-7" />
-            <span className="text-sm">more</span>
+            <Ban className="h-5 w-5" />
+            <span className="text-xs">{blocked ? "unblock" : "block"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onCallClick?.("voice")}
+            disabled={blocked}
+            className="flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95 disabled:opacity-45"
+          >
+            <Phone className="h-5 w-5" />
+            <span className="text-xs">audio</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onCallClick?.("video")}
+            disabled={blocked}
+            className="flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95 disabled:opacity-45"
+          >
+            <Video className="h-5 w-5" />
+            <span className="text-xs">video</span>
           </button>
         </div>
       )}
 
-      <div className="relative z-10 mx-auto mt-8 max-w-2xl overflow-hidden rounded-[2rem] bg-[#1b1b1f] px-5 py-4 text-left shadow-[0_24px_64px_rgba(0,0,0,0.36)]">
-        <div className="space-y-4 divide-y divide-white/8">
-          <div className="pb-4">
-            <p className="text-[19px] leading-tight text-white">username</p>
+      <div className="relative z-10 mx-auto mt-6 max-w-2xl overflow-hidden rounded-[1.65rem] bg-[#1b1b1f] px-4 py-3 text-left shadow-[0_24px_64px_rgba(0,0,0,0.36)]">
+        <div className="space-y-3 divide-y divide-white/8">
+          <div className="pb-3">
+            <p className="text-[16px] leading-tight text-white">username</p>
             <div className="mt-1 flex items-center justify-between gap-4">
-              <p className="truncate text-[25px] leading-tight text-[#ed78ff]">@{profile.username}</p>
-              <AtSign className="h-7 w-7 shrink-0 text-[#ed78ff]" />
+              <p className="truncate text-[21px] leading-tight text-[#ed78ff]">@{profile.username}</p>
+              <AtSign className="h-6 w-6 shrink-0 text-[#ed78ff]" />
             </div>
           </div>
 
           {birthday && isOwnProfile ? (
-            <div className="py-4">
-              <p className="text-[19px] leading-tight text-white">birthday</p>
-              <div className="mt-1 flex items-center gap-2 text-[24px] leading-tight text-white/88">
+            <div className="py-3">
+              <p className="text-[16px] leading-tight text-white">birthday</p>
+              <div className="mt-1 flex items-center gap-2 text-[20px] leading-tight text-white/88">
                 <CalendarDays className="h-5 w-5 text-white/42" />
                 <span>{birthday}</span>
               </div>
             </div>
           ) : null}
 
-          <div className="py-4">
-            <p className="text-[19px] leading-tight text-white">bio</p>
-            <p className="mt-1 whitespace-pre-wrap text-[23px] leading-snug text-white/88">
+          <div className="py-3">
+            <p className="text-[16px] leading-tight text-white">bio</p>
+            <p className="mt-1 whitespace-pre-wrap text-[19px] leading-snug text-white/88">
               {profile.bio || (isOwnProfile ? "Добавьте пару строк о себе" : "Пользователь пока ничего не написал")}
             </p>
           </div>
 
           {(profile.location || profile.website) && (
-            <div className="py-4">
-              <p className="text-[19px] leading-tight text-white">links</p>
-              <div className="mt-2 flex flex-wrap gap-3 text-[17px] text-white/70">
+            <div className="py-3">
+              <p className="text-[16px] leading-tight text-white">links</p>
+              <div className="mt-2 flex flex-wrap gap-3 text-[15px] text-white/70">
                 {profile.location && (
                   <span className="inline-flex items-center gap-1.5">
                     <MapPin className="h-4 w-4" />
@@ -542,17 +516,17 @@ export function ProfileHeader({
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-3 pt-4 text-center">
+          <div className="grid grid-cols-3 gap-3 pt-3 text-center">
             <div>
-              <AnimatedCounter value={profile.posts_count ?? 0} className="text-[23px] font-semibold text-white" />
+              <AnimatedCounter value={profile.posts_count ?? 0} className="text-[20px] font-semibold text-white" />
               <p className="text-sm text-white/45">posts</p>
             </div>
             <button type="button" onClick={() => openFollowModal("followers")} className="transition hover:opacity-75">
-              <AnimatedCounter value={localFollowersCount} className="text-[23px] font-semibold text-white" />
+              <AnimatedCounter value={localFollowersCount} className="text-[20px] font-semibold text-white" />
               <p className="text-sm text-white/45">followers</p>
             </button>
             <button type="button" onClick={() => openFollowModal("following")} className="transition hover:opacity-75">
-              <AnimatedCounter value={localFollowingCount} className="text-[23px] font-semibold text-white" />
+              <AnimatedCounter value={localFollowingCount} className="text-[20px] font-semibold text-white" />
               <p className="text-sm text-white/45">following</p>
             </button>
           </div>

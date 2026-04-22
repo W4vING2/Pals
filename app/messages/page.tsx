@@ -250,10 +250,7 @@ export default function MessagesPage() {
   }, []);
 
   const activeConv = conversations.find((c) => c.id === activeConversationId) ?? null;
-  const pageHeightClass =
-    mobileView === "chat"
-      ? "h-dvh"
-      : "h-[calc(100dvh-6.25rem-env(safe-area-inset-bottom,0px))]";
+  const pageHeightClass = "h-dvh";
 
   useEffect(() => {
     setMobileNavHidden(mobileView === "chat");
@@ -301,7 +298,7 @@ export default function MessagesPage() {
 
   return (
     <PageTransition className={`${pageHeightClass} lg:h-dvh`}>
-      <div className="h-full flex overflow-hidden bg-[var(--bg-base)]">
+      <div className="h-full flex overflow-hidden bg-[#030307] lg:bg-[var(--bg-base)]">
         {/* Desktop: both panels always visible */}
         <div className="hidden lg:block flex-shrink-0 w-80 xl:w-96 border-r border-[var(--border)] bg-[var(--bg-surface)]">
           <div className="h-full overflow-hidden">
@@ -342,16 +339,17 @@ export default function MessagesPage() {
         </div>
 
         {/* Mobile: animated slide between list and chat */}
-        <div className="lg:hidden w-full h-full relative overflow-hidden">
+        <div className="lg:hidden w-full h-full relative overflow-hidden bg-[#030307]">
           <AnimatePresence initial={false} mode="popLayout">
             {mobileView === "list" ? (
               <motion.div
                 key="conv-list"
-                className="absolute inset-0 bg-[var(--bg-surface)]"
-                initial={{ x: "-100%", opacity: 0.5 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: "-100%", opacity: 0.5 }}
-                transition={{ type: "spring", stiffness: 400, damping: 35, mass: 0.8 }}
+                className="absolute inset-0 bg-[#030307]"
+                initial={{ x: "-12%", opacity: 0.86, scale: 0.985 }}
+                animate={{ x: 0, opacity: 1, scale: 1, filter: "blur(0px)" }}
+                exit={{ x: "-18%", opacity: 0.55, scale: 0.965, filter: "blur(2px)" }}
+                transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+                style={{ willChange: "transform, opacity, filter" }}
               >
                 <div className="h-full overflow-hidden">
                   <ConversationList
@@ -370,11 +368,12 @@ export default function MessagesPage() {
             ) : (
               <motion.div
                 key="chat-window"
-                className="absolute inset-0 flex flex-col"
-                initial={{ x: "100%", opacity: 0.5 }}
-                animate={{ x: 0, opacity: 1 }}
-                exit={{ x: "100%", opacity: 0.5 }}
-                transition={{ type: "spring", stiffness: 400, damping: 35, mass: 0.8 }}
+                className="absolute inset-0 flex flex-col bg-[#030307] shadow-[-28px_0_70px_rgba(0,0,0,0.42)]"
+                initial={{ x: "100%", opacity: 1, scale: 0.995 }}
+                animate={{ x: 0, opacity: 1, scale: 1 }}
+                exit={{ x: "100%", opacity: 1, scale: 0.995 }}
+                transition={{ duration: 0.36, ease: [0.22, 1, 0.36, 1] }}
+                style={{ willChange: "transform" }}
               >
                 <ChatWindow
                   conversation={activeConv}
