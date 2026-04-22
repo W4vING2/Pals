@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Phone, Video, Paperclip, SendHorizontal,
-  MessageSquare, Settings, Users, Loader2, X, Mic, Lock,
-  Timer, ChevronDown, Search, Pin, PinOff, AtSign,
+  MessageSquare, Settings, Users, Loader2, X, Mic,
+  Timer, Search, Pin,
 } from "lucide-react";
 import { MessageBubble } from "./MessageBubble";
 import { ForwardModal } from "./ForwardModal";
@@ -267,10 +267,24 @@ export function ChatWindow({
   const chatAvatarUrl = isGroup ? conversation?.avatar_url : otherProfile?.avatar_url;
   const currentDisappearAfter = conversation?.disappear_after ?? null;
   const currentDisappearLabel = DISAPPEAR_OPTIONS.find((o) => o.value === currentDisappearAfter)?.label ?? "Выключено";
+  const chatInitial = isGroup ? "G" : chatName[0]?.toUpperCase() ?? "?";
+  const wallpaperStyle: React.CSSProperties = {
+    backgroundColor: "#030307",
+    backgroundImage:
+      "radial-gradient(circle at 18% 22%, rgba(162, 92, 255, 0.18) 0 1px, transparent 1.5px), radial-gradient(circle at 82% 14%, rgba(77, 144, 255, 0.16) 0 1px, transparent 1.5px), radial-gradient(circle at 38% 78%, rgba(218, 79, 255, 0.14) 0 1px, transparent 1.5px), linear-gradient(135deg, rgba(130, 75, 255, 0.13) 0 1px, transparent 1px), linear-gradient(45deg, rgba(83, 148, 255, 0.09) 0 1px, transparent 1px)",
+    backgroundSize: "68px 68px, 92px 92px, 110px 110px, 36px 36px, 44px 44px",
+  };
 
   const onlineUserIds = useMemo(() => (otherUserId ? [otherUserId] : []), [otherUserId]);
   const onlineMap = useOnlineStatus(onlineUserIds);
   const isOtherOnline = otherUserId ? onlineMap.get(otherUserId) ?? otherProfile?.is_online ?? false : false;
+  const chatSubtitle = isGroup
+    ? `${conversation?.participants.length ?? 0} участников`
+    : isOtherOnline
+      ? "online"
+      : otherProfile?.username
+        ? `@${otherProfile.username}`
+        : "last seen recently";
 
   // Pinned message
   const pinnedMessageId = conversation?.pinned_message_id ?? null;
@@ -418,109 +432,114 @@ export function ChatWindow({
   }
 
   return (
-    <div className="flex flex-col h-full relative">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#030307] text-white" style={wallpaperStyle}>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(95,95,255,0.16),transparent_34%),linear-gradient(180deg,rgba(0,0,0,0.36),rgba(0,0,0,0.08)_36%,rgba(0,0,0,0.62))]" />
+
       {/* Header */}
       {conversation && (
-        <div className="flex flex-col border-b border-[var(--border)] bg-[var(--bg-surface)]">
-          <div className="flex items-center gap-3 px-4 py-3">
-            {onBack && (
-              <button onClick={() => { haptic("light"); onBack(); }} className="w-8 h-8 flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors lg:hidden shrink-0">
-                <ArrowLeft className="w-5 h-5" />
+        <div className="relative z-20 px-4 pb-2 pt-[calc(env(safe-area-inset-top,0px)+0.65rem)]">
+          <div className="grid grid-cols-[3rem_1fr_3rem] items-center gap-3 lg:grid-cols-[3rem_minmax(16rem,30rem)_auto]">
+            {onBack ? (
+              <button
+                onClick={() => { haptic("light"); onBack(); }}
+                className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.09] text-white shadow-[0_16px_34px_rgba(0,0,0,0.34)] backdrop-blur-2xl transition active:scale-95 lg:hidden"
+                aria-label="Назад"
+              >
+                <ArrowLeft className="h-6 w-6" />
               </button>
+            ) : (
+              <div />
             )}
-            <div
-              className={cn("flex items-center gap-3 flex-1 min-w-0", !isGroup && otherProfile?.username && "cursor-pointer hover:opacity-80 transition-opacity")}
+
+            <button
+              type="button"
               onClick={handleHeaderClick}
+              className={cn(
+                "mx-auto flex h-14 min-w-0 max-w-full items-center justify-center rounded-[1.65rem] border border-white/10 bg-[#17171d]/78 px-5 text-center shadow-[0_18px_42px_rgba(0,0,0,0.38)] backdrop-blur-2xl transition",
+                !isGroup && otherProfile?.username && "hover:bg-white/[0.12] active:scale-[0.985]"
+              )}
             >
-              <div className="relative shrink-0">
+              <div className="min-w-0">
+                <p className="truncate text-[17px] font-semibold leading-tight tracking-[0.01em] text-white">{chatName}</p>
+                <p className={cn("truncate text-[13px] leading-tight", isOtherOnline ? "text-[#8affc1]" : "text-white/54")}>
+                  {chatSubtitle}
+                </p>
+              </div>
+            </button>
+
+            <div className="flex items-center justify-end gap-2">
+              <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-gradient-to-br from-[#8aa3ff] via-[#6b67ff] to-[#d64cff] text-lg font-bold text-white shadow-[0_12px_30px_rgba(101,86,255,0.35)]">
                 {chatAvatarUrl ? (
-                  <img src={chatAvatarUrl} alt={chatName} className="w-9 h-9 rounded-full object-cover" />
+                  <img src={chatAvatarUrl} alt={chatName} className="h-full w-full object-cover" />
+                ) : isGroup ? (
+                  <Users className="h-5 w-5" />
                 ) : (
-                  <div className={cn("w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-semibold", isGroup ? "bg-gradient-to-br from-purple-600 to-indigo-500" : "bg-gradient-to-br from-purple-500 to-emerald-500")}>
-                    {isGroup ? <Users className="size-4" /> : chatName[0]?.toUpperCase()}
-                  </div>
+                  chatInitial
                 )}
                 {!isGroup && <OnlineIndicator isOnline={isOtherOnline} size="sm" />}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm text-[var(--text-primary)] truncate flex items-center gap-1">
-                  {chatName}
-                  {!isGroup && <Lock className="size-3 text-emerald-500 shrink-0" />}
-                </p>
-                {isGroup ? (
-                  <p className="text-xs text-[var(--text-secondary)]">{conversation.participants.length} участников</p>
-                ) : (
-                  <p className="text-xs text-[var(--text-secondary)]">
-                    {isOtherOnline ? <span className="text-emerald-500">В сети</span> : otherProfile?.username ? <>@{otherProfile.username}</> : null}
-                  </p>
+
+              <div className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.07] p-1.5 backdrop-blur-2xl sm:flex">
+                <button
+                  onClick={() => { setSearchOpen((p) => !p); if (!searchOpen) setSearchQuery(""); }}
+                  className={cn("flex h-9 w-9 items-center justify-center rounded-full transition", searchOpen ? "bg-white/18 text-[#ef7cff]" : "text-white/72 hover:bg-white/12 hover:text-white")}
+                  aria-label="Поиск по сообщениям"
+                >
+                  <Search className="h-[18px] w-[18px]" />
+                </button>
+
+                {onSetDisappearTimer && (
+                  <div className="relative" ref={timerMenuRef}>
+                    <button
+                      onClick={() => setTimerMenuOpen((p) => !p)}
+                      className={cn("flex h-9 w-9 items-center justify-center rounded-full transition", currentDisappearAfter ? "bg-amber-400/16 text-amber-300" : "text-white/72 hover:bg-white/12 hover:text-white")}
+                      title={`Исчезающие сообщения: ${currentDisappearLabel}`}
+                    >
+                      <Timer className="h-[18px] w-[18px]" />
+                    </button>
+                    <AnimatePresence>
+                      {timerMenuOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9, y: -4 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.9, y: -4 }}
+                          transition={{ duration: 0.12 }}
+                          className="absolute right-0 top-full z-50 mt-2 min-w-[172px] overflow-hidden rounded-2xl border border-white/10 bg-[#18181f]/92 shadow-2xl backdrop-blur-2xl"
+                        >
+                          <div className="border-b border-white/10 px-3 py-2 text-[11px] font-semibold text-white/48">Исчезают через</div>
+                          {DISAPPEAR_OPTIONS.map((opt) => (
+                            <button
+                              key={String(opt.value)}
+                              onClick={() => handleDisappearSelect(opt.value)}
+                              className={cn("flex w-full items-center justify-between px-3 py-2 text-sm text-white transition hover:bg-white/10", opt.value === currentDisappearAfter && "text-[#ef7cff]")}
+                            >
+                              {opt.label}
+                              {opt.value === currentDisappearAfter && <span className="h-1.5 w-1.5 rounded-full bg-[#ef7cff]" />}
+                            </button>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+
+                {isGroup && onOpenGroupSettings && (
+                  <button onClick={onOpenGroupSettings} className="flex h-9 w-9 items-center justify-center rounded-full text-white/72 transition hover:bg-white/12 hover:text-white" aria-label="Настройки группы">
+                    <Settings className="h-[18px] w-[18px]" />
+                  </button>
+                )}
+
+                {!isGroup && onInitiateCall && (
+                  <>
+                    <button onClick={() => onInitiateCall("voice")} className="flex h-9 w-9 items-center justify-center rounded-full text-white/72 transition hover:bg-white/12 hover:text-white" aria-label="Аудиозвонок">
+                      <Phone className="h-[18px] w-[18px]" />
+                    </button>
+                    <button onClick={() => onInitiateCall("video")} className="flex h-9 w-9 items-center justify-center rounded-full text-white/72 transition hover:bg-white/12 hover:text-white" aria-label="Видеозвонок">
+                      <Video className="h-[18px] w-[18px]" />
+                    </button>
+                  </>
                 )}
               </div>
-            </div>
-
-            <div className="flex items-center gap-1">
-              {/* Search toggle */}
-              <button
-                onClick={() => { setSearchOpen((p) => !p); if (!searchOpen) setSearchQuery(""); }}
-                className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", searchOpen ? "text-[var(--accent-blue)] bg-[var(--accent-blue)]/10" : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]")}
-                aria-label="Поиск по сообщениям"
-              >
-                <Search className="w-5 h-5" />
-              </button>
-
-              {/* Disappear timer */}
-              {onSetDisappearTimer && (
-                <div className="relative" ref={timerMenuRef}>
-                  <button
-                    onClick={() => setTimerMenuOpen((p) => !p)}
-                    className={cn("w-9 h-9 rounded-xl flex items-center justify-center transition-all", currentDisappearAfter ? "text-amber-400 hover:bg-amber-400/10" : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)]")}
-                    title={`Исчезающие сообщения: ${currentDisappearLabel}`}
-                  >
-                    <Timer className="w-5 h-5" />
-                  </button>
-                  <AnimatePresence>
-                    {timerMenuOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, scale: 0.9, y: -4 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.9, y: -4 }}
-                        transition={{ duration: 0.12 }}
-                        className="absolute right-0 top-full mt-1 z-50 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl shadow-lg overflow-hidden min-w-[160px]"
-                      >
-                        <div className="px-3 py-2 text-[11px] font-semibold text-[var(--text-secondary)] border-b border-[var(--border)]">Исчезают через</div>
-                        {DISAPPEAR_OPTIONS.map((opt) => (
-                          <button
-                            key={String(opt.value)}
-                            onClick={() => handleDisappearSelect(opt.value)}
-                            className={cn("flex items-center justify-between w-full px-3 py-2 text-sm transition-colors hover:bg-[var(--bg-surface)]", opt.value === currentDisappearAfter ? "text-[var(--accent-blue)] font-medium" : "text-[var(--text-primary)]")}
-                          >
-                            {opt.label}
-                            {opt.value === currentDisappearAfter && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-blue)]" />}
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              )}
-
-              {/* Group settings */}
-              {isGroup && onOpenGroupSettings && (
-                <button onClick={onOpenGroupSettings} className="w-9 h-9 rounded-xl flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)] transition-all">
-                  <Settings className="w-5 h-5" />
-                </button>
-              )}
-
-              {/* Call buttons (DMs only) */}
-              {!isGroup && onInitiateCall && (
-                <>
-                  <button onClick={() => onInitiateCall("voice")} className="w-9 h-9 rounded-xl flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)] transition-all">
-                    <Phone className="w-5 h-5" />
-                  </button>
-                  <button onClick={() => onInitiateCall("video")} className="w-9 h-9 rounded-xl flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-blue)] transition-all">
-                    <Video className="w-5 h-5" />
-                  </button>
-                </>
-              )}
             </div>
           </div>
 
@@ -528,29 +547,29 @@ export function ChatWindow({
           <AnimatePresence>
             {searchOpen && (
               <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.15 }}
-                className="px-4 pb-3 overflow-hidden"
+                initial={{ height: 0, opacity: 0, y: -8 }}
+                animate={{ height: "auto", opacity: 1, y: 0 }}
+                exit={{ height: 0, opacity: 0, y: -8 }}
+                transition={{ duration: 0.18 }}
+                className="overflow-hidden px-1 pt-3"
               >
-                <div className="flex items-center gap-2 bg-[var(--bg-elevated)] rounded-xl px-3 py-2">
-                  <Search className="w-4 h-4 text-[var(--text-secondary)] shrink-0" />
+                <div className="flex items-center gap-2 rounded-full border border-white/10 bg-[#15151b]/82 px-4 py-2.5 shadow-2xl backdrop-blur-2xl">
+                  <Search className="h-4 w-4 shrink-0 text-white/45" />
                   <input
                     ref={searchInputRef}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Поиск по сообщениям..."
-                    className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none"
+                    className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/38"
                   />
                   {searchQuery && (
-                    <button onClick={() => setSearchQuery("")} className="text-[var(--text-secondary)]">
-                      <X className="w-3.5 h-3.5" />
+                    <button onClick={() => setSearchQuery("")} className="text-white/50">
+                      <X className="h-3.5 w-3.5" />
                     </button>
                   )}
                 </div>
                 {searchQuery && (
-                  <p className="text-xs text-[var(--text-secondary)] mt-1.5 pl-1">
+                  <p className="mt-1.5 pl-4 text-xs text-white/45">
                     Найдено: {displayMessages.length}
                   </p>
                 )}
@@ -568,12 +587,12 @@ export function ChatWindow({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.2 }}
-            className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20"
+            className="relative z-10 mx-4 mb-2 flex items-center gap-2 rounded-2xl border border-amber-300/15 bg-amber-400/10 px-4 py-2 shadow-lg backdrop-blur-2xl"
           >
             <Pin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-[11px] font-semibold text-amber-400">Закреплено</p>
-              <p className="text-xs text-[var(--text-secondary)] truncate">
+              <p className="truncate text-xs text-white/55">
                 {pinnedMessage.message_type === "voice"
                   ? "🎤 Голосовое"
                   : pinnedMessage.image_url
@@ -584,7 +603,7 @@ export function ChatWindow({
             {onUnpinMessage && (
               <button
                 onClick={() => { haptic("light"); onUnpinMessage(); }}
-                className="shrink-0 p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                className="shrink-0 p-1 text-white/55 transition-colors hover:text-white"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -594,18 +613,18 @@ export function ChatWindow({
       </AnimatePresence>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto py-4 px-4 space-y-2">
+      <div className="relative z-10 min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 pb-4 pt-2 sm:px-5">
         {loading ? (
           <SkeletonMessages />
         ) : displayMessages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-center">
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             {searchQuery ? (
               <>
-                <Search className="w-10 h-10 text-[var(--text-secondary)] opacity-20" />
-                <p className="text-sm text-[var(--text-secondary)]">Ничего не найдено по запросу «{searchQuery}»</p>
+                <Search className="h-10 w-10 text-white/20" />
+                <p className="text-sm text-white/52">Ничего не найдено по запросу «{searchQuery}»</p>
               </>
             ) : (
-              <p className="text-sm text-[var(--text-secondary)]">Сообщений пока нет. Напишите первым!</p>
+              <p className="text-sm text-white/52">Сообщений пока нет. Напишите первым!</p>
             )}
           </div>
         ) : (
@@ -618,12 +637,10 @@ export function ChatWindow({
             return (
               <React.Fragment key={msg.id}>
                 {showDateSep && (
-                  <div className="flex items-center gap-3 py-2">
-                    <div className="flex-1 h-px bg-[var(--border)]" />
-                    <span className="text-[11px] font-medium text-[var(--text-secondary)] bg-[var(--bg-base)] px-3 py-1 rounded-full border border-[var(--border)]">
+                  <div className="flex items-center justify-center py-3">
+                    <span className="rounded-full border border-white/10 bg-black/28 px-3 py-1 text-[12px] font-semibold text-white/82 shadow-lg backdrop-blur-xl">
                       {formatDateSeparator(msg.created_at)}
                     </span>
-                    <div className="flex-1 h-px bg-[var(--border)]" />
                   </div>
                 )}
                 <MessageBubble
@@ -656,13 +673,13 @@ export function ChatWindow({
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.15 }}
-            className="px-4 py-1"
+            className="relative z-10 px-4 py-1"
           >
-            <span className="text-xs text-[var(--text-secondary)] flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 text-xs text-white/55">
               <span className="flex gap-0.5">
-                <span className="w-1 h-1 rounded-full bg-[var(--text-secondary)] animate-bounce" style={{ animationDelay: "0ms" }} />
-                <span className="w-1 h-1 rounded-full bg-[var(--text-secondary)] animate-bounce" style={{ animationDelay: "150ms" }} />
-                <span className="w-1 h-1 rounded-full bg-[var(--text-secondary)] animate-bounce" style={{ animationDelay: "300ms" }} />
+                <span className="h-1 w-1 animate-bounce rounded-full bg-white/45" style={{ animationDelay: "0ms" }} />
+                <span className="h-1 w-1 animate-bounce rounded-full bg-white/45" style={{ animationDelay: "150ms" }} />
+                <span className="h-1 w-1 animate-bounce rounded-full bg-white/45" style={{ animationDelay: "300ms" }} />
               </span>
               {typingUsers.length === 1 ? `${typingUsers[0].displayName} печатает` : "Печатают..."}
             </span>
@@ -671,7 +688,7 @@ export function ChatWindow({
       </AnimatePresence>
 
       {uploadError && (
-        <div className="px-4 py-2 bg-red-500/10 text-red-400 text-xs text-center">{uploadError}</div>
+        <div className="relative z-10 mx-4 rounded-2xl bg-red-500/12 px-4 py-2 text-center text-xs text-red-300 backdrop-blur-xl">{uploadError}</div>
       )}
 
       {/* Pending image preview */}
@@ -681,7 +698,7 @@ export function ChatWindow({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
-            className="px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-surface)]/90 backdrop-blur-xl"
+            className="relative z-20 mx-3 mb-2 rounded-[1.5rem] border border-white/10 bg-[#17171d]/86 px-4 py-3 shadow-2xl backdrop-blur-2xl"
           >
             <div className="flex items-start gap-3">
               <div className="relative rounded-xl overflow-hidden shrink-0" style={{ maxWidth: 120, maxHeight: 120 }}>
@@ -693,21 +710,21 @@ export function ChatWindow({
                   onChange={(e) => setCaption(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendImage(); } }}
                   placeholder="Подпись (необязательно)..."
-                  className="w-full bg-[var(--bg-input)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] outline-none"
+                  className="w-full rounded-2xl border border-white/10 bg-white/[0.08] px-3 py-2 text-sm text-white outline-none placeholder:text-white/40"
                 />
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleSendImage}
                     disabled={uploading}
-                    className="px-4 py-1.5 rounded-xl bg-[var(--accent-blue)] text-white text-sm font-medium hover:bg-[var(--accent-blue)]/90 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                    className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#738cff] to-[#ed62ff] px-4 py-1.5 text-sm font-medium text-white transition-colors disabled:opacity-50"
                   >
                     {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <SendHorizontal className="w-3.5 h-3.5" />}
                     Отправить
                   </button>
-                  <button onClick={cancelPendingImage} className="px-3 py-1.5 rounded-xl text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors">Отмена</button>
+                  <button onClick={cancelPendingImage} className="rounded-xl px-3 py-1.5 text-sm text-white/55 transition-colors hover:bg-white/10">Отмена</button>
                 </div>
               </div>
-              <button onClick={cancelPendingImage} className="shrink-0 p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
+              <button onClick={cancelPendingImage} className="shrink-0 p-1 text-white/55 transition-colors hover:text-white">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -723,18 +740,18 @@ export function ChatWindow({
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.15 }}
-            className="px-4 py-2 border-t border-[var(--border)] bg-[var(--bg-surface)]/90 backdrop-blur-xl"
+            className="relative z-20 mx-3 mb-2 rounded-[1.25rem] border border-white/10 bg-[#17171d]/86 px-4 py-2 shadow-2xl backdrop-blur-2xl"
           >
             <div className="flex items-center gap-2">
-              <div className="flex-1 pl-2 border-l-2 border-[var(--accent-blue)] min-w-0">
-                <p className="text-[11px] font-semibold text-[var(--accent-blue)] truncate">
+              <div className="min-w-0 flex-1 border-l-2 border-[#ef7cff] pl-2">
+                <p className="truncate text-[11px] font-semibold text-[#f58dff]">
                   {replyTo.profiles?.display_name ?? replyTo.profiles?.username ?? "Пользователь"}
                 </p>
-                <p className="text-xs text-[var(--text-secondary)] truncate">
+                <p className="truncate text-xs text-white/55">
                   {replyTo.message_type === "voice" ? "🎤 Голосовое" : replyTo.image_url ? "📷 Фото" : replyTo.content ?? ""}
                 </p>
               </div>
-              <button onClick={() => setReplyTo(null)} className="shrink-0 p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
+              <button onClick={() => setReplyTo(null)} className="shrink-0 p-1 text-white/55 transition-colors hover:text-white">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -743,7 +760,7 @@ export function ChatWindow({
       </AnimatePresence>
 
       {/* Input area */}
-      <div className="relative px-4 py-3 border-t border-[var(--border)] bg-[var(--bg-surface)]/80 backdrop-blur-xl">
+      <div className="relative z-20 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+0.75rem)] pt-2">
         {/* Mentions dropdown */}
         <AnimatePresence>
           {mentionQuery !== null && conversation && (
@@ -755,7 +772,7 @@ export function ChatWindow({
           )}
         </AnimatePresence>
 
-        <div className="flex items-center gap-2 bg-[var(--bg-input)] border border-[var(--border)] rounded-full px-4 py-2">
+        <div className="flex items-center gap-2">
           {voiceMode ? (
             <VoiceRecorder
               onRecorded={async (blob) => {
@@ -797,7 +814,7 @@ export function ChatWindow({
                   }
                 }}
                 disabled={uploading}
-                className="text-[var(--text-secondary)] hover:text-[var(--accent-blue)] transition-colors shrink-0 flex items-center justify-center w-8 h-8"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#17171d]/88 text-white/80 shadow-[0_12px_24px_rgba(0,0,0,0.3)] backdrop-blur-2xl transition hover:text-white active:scale-95"
               >
                 <Paperclip className="w-5 h-5" />
               </button>
@@ -811,14 +828,14 @@ export function ChatWindow({
                 onKeyDown={handleKeyDown}
                 placeholder="Сообщение..."
                 rows={1}
-                className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] resize-none outline-none max-h-32 leading-normal self-center"
-                style={{ minHeight: "24px", paddingTop: "2px", paddingBottom: "2px" }}
+                className="max-h-32 flex-1 resize-none self-center rounded-full border border-white/10 bg-[#17171d]/88 px-4 py-3 text-[16px] leading-normal text-white shadow-[0_12px_24px_rgba(0,0,0,0.28)] outline-none placeholder:text-white/38 backdrop-blur-2xl"
+                style={{ minHeight: "48px", paddingTop: "12px", paddingBottom: "12px" }}
               />
 
               {/* Mic */}
               <button
                 onClick={() => setVoiceMode(true)}
-                className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--accent-blue)] transition-colors"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#17171d]/88 text-white/80 shadow-[0_12px_24px_rgba(0,0,0,0.3)] backdrop-blur-2xl transition hover:text-white active:scale-95"
               >
                 <Mic className="w-5 h-5" />
               </button>
@@ -830,11 +847,11 @@ export function ChatWindow({
                 animate={justSent ? { rotate: [0, -15, 15, 0], scale: [1, 1.15, 1] } : { rotate: 0, scale: 1 }}
                 transition={{ duration: 0.3 }}
                 className={cn(
-                  "shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150",
-                  text.trim() ? "bg-[var(--accent-blue)] text-white hover:bg-[var(--accent-blue-hover)]" : "text-[var(--text-secondary)]"
+                  "flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-[0_12px_28px_rgba(0,0,0,0.34)] transition-all duration-150",
+                  text.trim() ? "bg-gradient-to-br from-[#f05dff] to-[#747dff] text-white" : "border border-white/10 bg-[#17171d]/88 text-white/50 backdrop-blur-2xl"
                 )}
               >
-                <SendHorizontal className="w-4 h-4" />
+                <SendHorizontal className="h-5 w-5" />
               </motion.button>
             </>
           )}

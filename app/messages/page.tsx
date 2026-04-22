@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/hooks/useMessages";
 import { useCalls } from "@/hooks/useCalls";
-import { useMessagesStore } from "@/lib/store";
+import { useChromeStore, useMessagesStore } from "@/lib/store";
 import {
   ConversationList,
   type ChatSuggestion,
@@ -48,6 +48,7 @@ export default function MessagesPage() {
 
   // Read conversation ID from Zustand store (set before navigation) or URL
   const { pendingConversationId, setPendingConversationId } = useMessagesStore();
+  const setMobileNavHidden = useChromeStore((state) => state.setMobileNavHidden);
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const [groupSettingsOpen, setGroupSettingsOpen] = useState(false);
@@ -249,6 +250,15 @@ export default function MessagesPage() {
   }, []);
 
   const activeConv = conversations.find((c) => c.id === activeConversationId) ?? null;
+  const pageHeightClass =
+    mobileView === "chat"
+      ? "h-dvh"
+      : "h-[calc(100dvh-6.25rem-env(safe-area-inset-bottom,0px))]";
+
+  useEffect(() => {
+    setMobileNavHidden(mobileView === "chat");
+    return () => setMobileNavHidden(false);
+  }, [mobileView, setMobileNavHidden]);
 
   const handlePinMessage = async (messageId: string) => {
     if (!activeConversationId) return;
@@ -290,7 +300,7 @@ export default function MessagesPage() {
   }
 
   return (
-    <PageTransition className="h-[calc(100dvh-6.25rem-env(safe-area-inset-bottom,0px))] lg:h-dvh">
+    <PageTransition className={`${pageHeightClass} lg:h-dvh`}>
       <div className="h-full flex overflow-hidden bg-[var(--bg-base)]">
         {/* Desktop: both panels always visible */}
         <div className="hidden lg:block flex-shrink-0 w-80 xl:w-96 border-r border-[var(--border)] bg-[var(--bg-surface)]">

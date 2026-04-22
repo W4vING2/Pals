@@ -12,6 +12,7 @@ import { usePresence } from "@/hooks/usePresence";
 import { useRealtimeBadges } from "@/hooks/useRealtimeBadges";
 import {
   useCallStore,
+  useChromeStore,
   useCreatePostStore,
   useQuickActionStore,
 } from "@/lib/store";
@@ -77,6 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   usePresence();
   useRealtimeBadges();
   const { activeCall, callError, setCallError } = useCallStore();
+  const mobileNavHidden = useChromeStore((state) => state.mobileNavHidden);
   const { open: createPostOpen, setOpen: setCreatePostOpen } = useCreatePostStore();
   const {
     expanded: quickActionsExpanded,
@@ -212,9 +214,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isAuthPage = AUTH_PATHS.some((p) => pathname.startsWith(p));
   const showNav = !isAuthPage && !!user && !loading;
-  const isImmersiveRoute =
-    pathname.startsWith("/messages") || pathname.startsWith("/topics");
-  const showQuickActions = showNav && !isImmersiveRoute;
+  const isMessagesRoute = pathname.startsWith("/messages");
+  const isAlwaysImmersiveRoute = pathname.startsWith("/topics");
+  const hideMobileChrome = mobileNavHidden || isAlwaysImmersiveRoute;
+  const showQuickActions = showNav && !isMessagesRoute && !hideMobileChrome;
 
   return (
     <>
@@ -228,7 +231,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {showNav && (
         <>
           <DesktopSidebar />
-          <MobileNavBar />
+          {!hideMobileChrome && <MobileNavBar />}
           <IncomingCallBanner />
           <CreatePost
             open={createPostOpen}
@@ -335,7 +338,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main
         className={
           showNav
-            ? isImmersiveRoute
+            ? hideMobileChrome
               ? "min-h-dvh lg:pl-60"
               : "min-h-dvh pb-24 lg:pb-0 lg:pl-60"
             : "min-h-dvh"

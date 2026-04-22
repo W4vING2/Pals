@@ -73,7 +73,7 @@ function ExpiryCountdown({ expiresAt }: { expiresAt: string }) {
     <span
       className={cn(
         "inline-flex items-center gap-0.5 text-[9px] font-medium",
-        remaining <= 30 ? "text-red-400" : "text-[var(--text-secondary)]"
+        remaining <= 30 ? "text-red-300" : "text-white/42"
       )}
       title="Сообщение исчезнет"
     >
@@ -101,14 +101,14 @@ function ReplyPreviewBubble({ preview, isOwn }: { preview: Message["reply_previe
       className={cn(
         "flex flex-col text-[11px] leading-snug px-2.5 py-1.5 rounded-xl mb-0.5 border-l-2 max-w-full overflow-hidden",
         isOwn
-          ? "bg-white/10 border-white/40 text-white/80"
-          : "bg-[var(--bg-elevated)] border-[var(--accent-blue)] text-[var(--text-secondary)]"
+          ? "bg-white/12 border-white/45 text-white/80"
+          : "border-[#8c8cff] bg-black/22 text-white/58"
       )}
       style={{ maxWidth: 220 }}
     >
       <span
         className="font-semibold truncate"
-        style={{ color: isOwn ? "rgba(255,255,255,0.9)" : "var(--accent-blue)" }}
+        style={{ color: isOwn ? "rgba(255,255,255,0.9)" : "#aeb7ff" }}
       >
         {preview.sender_name}
       </span>
@@ -123,7 +123,7 @@ function ForwardedBanner({ sender, isOwn }: { sender: string; isOwn: boolean }) 
     <div
       className={cn(
         "flex items-center gap-1 text-[10px] font-medium mb-0.5",
-        isOwn ? "text-white/60" : "text-[var(--text-secondary)]"
+        isOwn ? "text-white/60" : "text-white/50"
       )}
     >
       <Share2 className="w-2.5 h-2.5" />
@@ -297,7 +297,7 @@ export const MessageBubble = memo(function MessageBubble({
   if (isSystemMessage) {
     return (
       <div className="flex justify-center my-2">
-        <span className="text-xs text-[var(--text-secondary)] bg-[var(--bg-elevated)] px-3 py-1 rounded-full">
+        <span className="rounded-full border border-white/10 bg-black/28 px-3 py-1 text-xs font-medium text-white/62 backdrop-blur-xl">
           {message.content}
         </span>
       </div>
@@ -354,7 +354,7 @@ export const MessageBubble = memo(function MessageBubble({
           }
         }}
         className={cn(
-          "flex flex-col gap-0.5 max-w-[75%] sm:max-w-md relative",
+          "relative flex max-w-[78%] flex-col gap-0.5 sm:max-w-md",
           isOwn ? "items-end" : "items-start"
         )}
       >
@@ -371,7 +371,7 @@ export const MessageBubble = memo(function MessageBubble({
         {message.image_url && (
           <>
             <div
-              className="relative rounded-xl overflow-hidden cursor-zoom-in"
+              className="relative cursor-zoom-in overflow-hidden rounded-[1.25rem] shadow-[0_12px_28px_rgba(0,0,0,0.32)]"
               onClick={(e) => { e.stopPropagation(); setLightboxOpen(true); }}
               style={{ maxWidth: 280 }}
             >
@@ -380,7 +380,7 @@ export const MessageBubble = memo(function MessageBubble({
                 alt="Изображение"
                 width={280}
                 height={280}
-                className="w-full h-auto object-cover rounded-xl"
+                className="h-auto w-full rounded-[1.25rem] object-cover"
                 sizes="280px"
                 style={{ width: "auto", height: "auto" }}
               />
@@ -397,10 +397,10 @@ export const MessageBubble = memo(function MessageBubble({
           <div
             onClick={handleClick}
             className={cn(
-              "px-3 py-2 rounded-2xl cursor-pointer active:scale-[0.98] transition-all",
+              "cursor-pointer rounded-[1.35rem] px-3 py-2 shadow-[0_10px_24px_rgba(0,0,0,0.22)] transition-all active:scale-[0.98]",
               isOwn
-                ? "bg-[var(--accent-blue)] text-white rounded-br-md"
-                : "bg-[var(--bg-surface)] text-[var(--text-primary)] rounded-bl-md border border-[var(--border)]"
+                ? "rounded-br-md bg-gradient-to-br from-[#c95cff] via-[#8d7dff] to-[#6d96ff] text-white"
+                : "rounded-bl-md border border-white/8 bg-[#1b1b22]/92 text-white backdrop-blur-xl"
             )}
           >
             <AudioPlayer src={message.audio_url} isOwn={isOwn} />
@@ -409,24 +409,24 @@ export const MessageBubble = memo(function MessageBubble({
 
         {editing ? (
           <div className="w-full min-w-[200px]">
-            <div className="bg-[var(--bg-surface)] border-2 border-[var(--accent-blue)] rounded-2xl px-3 py-2">
+            <div className="rounded-[1.35rem] border-2 border-[#b279ff] bg-[#17171d]/92 px-3 py-2 backdrop-blur-xl">
               <textarea
                 ref={editInputRef}
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
                 onKeyDown={handleEditKeyDown}
                 rows={1}
-                className="w-full bg-transparent text-sm text-[var(--text-primary)] resize-none outline-none leading-relaxed"
+                className="w-full resize-none bg-transparent text-sm leading-relaxed text-white outline-none"
                 style={{ minHeight: "20px" }}
               />
               <div className="flex items-center justify-end gap-1 mt-1">
-                <button onClick={handleCancelEdit} className="p-1 rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] transition-colors">
+                <button onClick={handleCancelEdit} className="rounded-lg p-1 text-white/50 transition-colors hover:bg-white/10">
                   <X className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={handleSaveEdit}
                   disabled={!editText.trim()}
-                  className="p-1 rounded-lg text-[var(--accent-blue)] hover:bg-[var(--accent-blue)]/10 transition-colors disabled:opacity-40"
+                  className="rounded-lg p-1 text-[#d783ff] transition-colors hover:bg-white/10 disabled:opacity-40"
                 >
                   <CornerDownLeft className="w-3.5 h-3.5" />
                 </button>
@@ -442,10 +442,10 @@ export const MessageBubble = memo(function MessageBubble({
                 <div
                   onClick={handleClick}
                   className={cn(
-                    "px-4 py-2.5 text-sm leading-relaxed transition-all cursor-pointer active:scale-[0.98] break-words whitespace-pre-wrap overflow-hidden [overflow-wrap:anywhere]",
+                    "cursor-pointer overflow-hidden whitespace-pre-wrap break-words px-4 py-2.5 text-[16px] leading-snug shadow-[0_10px_24px_rgba(0,0,0,0.24)] transition-all [overflow-wrap:anywhere] active:scale-[0.98]",
                     isOwn
-                      ? "bg-[var(--accent-blue)] text-white rounded-2xl rounded-br-md"
-                      : "bg-[var(--bg-surface)] text-[var(--text-primary)] rounded-2xl rounded-bl-md border border-[var(--border)]",
+                      ? "rounded-[1.35rem] rounded-br-md bg-gradient-to-br from-[#c95cff] via-[#8d7dff] to-[#6d96ff] text-white"
+                      : "rounded-[1.35rem] rounded-bl-md border border-white/8 bg-[#1b1b22]/94 text-white backdrop-blur-xl",
                     message._status === "failed" && "opacity-60",
                     message._status === "sending" && "opacity-80"
                   )}
@@ -463,20 +463,20 @@ export const MessageBubble = memo(function MessageBubble({
 
         {/* Reactions */}
         {reactionGroups.length > 0 && (
-          <div className={cn("flex flex-wrap gap-1 mt-0.5", isOwn ? "justify-end" : "justify-start")}>
+          <div className={cn("mt-0.5 flex flex-wrap gap-1", isOwn ? "justify-end" : "justify-start")}>
             {reactionGroups.map((g) => (
               <button
                 key={g.emoji}
                 onClick={() => { haptic("light"); onToggleReaction?.(message.id, g.emoji); }}
                 className={cn(
-                  "flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs transition-all active:scale-90",
+                  "flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs transition-all active:scale-90",
                   g.hasOwn
-                    ? "bg-[var(--accent-blue)]/20 border border-[var(--accent-blue)]/40"
-                    : "bg-[var(--bg-elevated)] border border-[var(--border)] hover:bg-[var(--bg-surface)]"
+                    ? "border border-[#d87aff]/40 bg-[#d87aff]/20"
+                    : "border border-white/10 bg-black/24 hover:bg-white/10"
                 )}
               >
                 <span>{g.emoji}</span>
-                {g.count > 1 && <span className="text-[10px] text-[var(--text-secondary)]">{g.count}</span>}
+                {g.count > 1 && <span className="text-[10px] text-white/55">{g.count}</span>}
               </button>
             ))}
           </div>
@@ -485,7 +485,7 @@ export const MessageBubble = memo(function MessageBubble({
         {/* Timestamp + status */}
         {!editing && (
           <div className="flex items-center gap-1 px-1">
-            <span className="text-[10px] text-[var(--text-secondary)]">
+            <span className="text-[10px] text-white/42">
               {formatTime(message.created_at)}
               {message.is_edited && <span className="ml-1 italic">изм.</span>}
             </span>
@@ -532,19 +532,19 @@ export const MessageBubble = memo(function MessageBubble({
               exit={{ opacity: 0, scale: 0.85, y: 5 }}
               transition={{ duration: 0.13 }}
               className={cn(
-                "absolute z-50 bg-[var(--bg-elevated)] backdrop-blur-xl rounded-xl shadow-xl border border-[var(--border)] overflow-hidden min-w-[180px]",
+                "absolute z-50 min-w-[180px] overflow-hidden rounded-2xl border border-white/10 bg-[#18181f]/94 shadow-2xl backdrop-blur-2xl",
                 "bottom-full mb-1",
                 isOwn ? "right-0" : "left-0"
               )}
             >
               {/* Quick emoji row */}
               {onToggleReaction && (
-                <div className="flex items-center gap-0.5 px-2 py-2 border-b border-[var(--border)]">
+                <div className="flex items-center gap-0.5 border-b border-white/10 px-2 py-2">
                   {QUICK_EMOJIS.map((emoji) => (
                     <button
                       key={emoji}
                       onClick={() => handleReaction(emoji)}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[var(--bg-surface)] transition-colors text-base active:scale-90"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-base transition-colors hover:bg-white/10 active:scale-90"
                     >
                       {emoji}
                     </button>
@@ -554,34 +554,34 @@ export const MessageBubble = memo(function MessageBubble({
 
               {/* Reply */}
               {onReply && (
-                <button onClick={handleReply} className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors w-full text-left">
-                  <Reply className="w-4 h-4 text-[var(--text-secondary)]" />
+                <button onClick={handleReply} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-white transition-colors hover:bg-white/10">
+                  <Reply className="h-4 w-4 text-white/50" />
                   Ответить
                 </button>
               )}
 
               {/* Forward */}
               {onForward && (
-                <button onClick={handleForward} className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors w-full text-left">
-                  <Share2 className="w-4 h-4 text-[var(--text-secondary)]" />
+                <button onClick={handleForward} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-white transition-colors hover:bg-white/10">
+                  <Share2 className="h-4 w-4 text-white/50" />
                   Переслать
                 </button>
               )}
 
               {/* Pin / Unpin */}
               {(onPin || onUnpin) && (
-                <button onClick={handlePin} className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors w-full text-left">
+                <button onClick={handlePin} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-white transition-colors hover:bg-white/10">
                   {isPinned
-                    ? <><PinOff className="w-4 h-4 text-[var(--text-secondary)]" />Открепить</>
-                    : <><Pin className="w-4 h-4 text-[var(--text-secondary)]" />Закрепить</>
+                    ? <><PinOff className="h-4 w-4 text-white/50" />Открепить</>
+                    : <><Pin className="h-4 w-4 text-white/50" />Закрепить</>
                   }
                 </button>
               )}
 
               {/* Copy */}
               {message.content && (
-                <button onClick={handleCopy} className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors w-full text-left">
-                  <Copy className="w-4 h-4 text-[var(--text-secondary)]" />
+                <button onClick={handleCopy} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-white transition-colors hover:bg-white/10">
+                  <Copy className="h-4 w-4 text-white/50" />
                   Копировать
                 </button>
               )}
@@ -590,13 +590,13 @@ export const MessageBubble = memo(function MessageBubble({
               {isOwn && (
                 <>
                   {message.content && (
-                    <button onClick={handleEdit} className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors w-full text-left">
-                      <Pencil className="w-4 h-4 text-[var(--text-secondary)]" />
+                    <button onClick={handleEdit} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-white transition-colors hover:bg-white/10">
+                      <Pencil className="h-4 w-4 text-white/50" />
                       Изменить
                     </button>
                   )}
-                  <button onClick={handleDelete} className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-500/10 transition-colors w-full text-left">
-                    <Trash2 className="w-4 h-4" />
+                  <button onClick={handleDelete} className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-red-300 transition-colors hover:bg-red-500/10">
+                    <Trash2 className="h-4 w-4" />
                     Удалить
                   </button>
                 </>
@@ -624,7 +624,7 @@ function MentionText({ content, isOwn }: { content: string; isOwn: boolean }) {
               key={i}
               className={cn(
                 "font-semibold rounded px-0.5",
-                isOwn ? "bg-white/20 text-white" : "bg-[var(--accent-blue)]/15 text-[var(--accent-blue)]"
+                isOwn ? "bg-white/20 text-white" : "bg-[#8f9cff]/18 text-[#b9c1ff]"
               )}
             >
               {part}

@@ -188,6 +188,18 @@ export const useQuickActionStore = create<QuickActionState>((set) => ({
     set((state) => ({ storyRefreshKey: state.storyRefreshKey + 1 })),
 }));
 
+// ── App Chrome Store ───────────────────────────────────────
+
+type ChromeState = {
+  mobileNavHidden: boolean;
+  setMobileNavHidden: (hidden: boolean) => void;
+};
+
+export const useChromeStore = create<ChromeState>((set) => ({
+  mobileNavHidden: false,
+  setMobileNavHidden: (mobileNavHidden) => set({ mobileNavHidden }),
+}));
+
 // ── Messages Store ────────────────────────────────────────
 
 type MessagesStoreState = {
