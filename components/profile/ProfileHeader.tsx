@@ -2,9 +2,9 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/Avatar";
-import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import {
   Dialog,
@@ -15,25 +15,30 @@ import {
 } from "@/components/ui/dialog";
 import { AnimatedCounter } from "@/components/shared/AnimatedCounter";
 import { OnlineIndicator } from "@/components/shared/OnlineIndicator";
+import { StoryViewer } from "@/components/stories/StoryViewer";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { useAuthStore } from "@/lib/store";
-import { useRouter } from "next/navigation";
-import {
-  Camera,
-  MapPin,
-  Link as LinkIcon,
-  MessageCircle,
-  UserCheck,
-  UserPlus,
-  X,
-  Loader2,
-  MoreHorizontal,
-  Ban,
-  Settings,
-} from "lucide-react";
 import { useBlockedUsers } from "@/hooks/useBlockedUsers";
 import { cn } from "@/lib/utils";
-import { StoryViewer } from "@/components/stories/StoryViewer";
+import {
+  ArrowLeft,
+  AtSign,
+  Ban,
+  Camera,
+  CalendarDays,
+  Grid2X2,
+  Link as LinkIcon,
+  Loader2,
+  MapPin,
+  MessageCircle,
+  MoreHorizontal,
+  Search,
+  Settings,
+  UserCheck,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
 import type { Profile, Story } from "@/lib/supabase";
 
 interface ProfileHeaderProps {
@@ -41,6 +46,89 @@ interface ProfileHeaderProps {
   isOwnProfile: boolean;
   onMessageClick?: () => void;
   onProfileUpdated?: (profile: Profile) => void;
+}
+
+function formatBirthday(value: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const now = new Date();
+  let age = now.getFullYear() - date.getFullYear();
+  const hadBirthday =
+    now.getMonth() > date.getMonth() ||
+    (now.getMonth() === date.getMonth() && now.getDate() >= date.getDate());
+  if (!hadBirthday) age -= 1;
+
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }) + (age >= 0 ? ` (${age} years old)` : "");
+}
+
+function ProfileAvatar({
+  profile,
+  name,
+  hasStories,
+  isOwnProfile,
+  uploadingAvatar,
+  onOpenStories,
+  onAvatarClick,
+}: {
+  profile: Profile;
+  name: string;
+  hasStories: boolean;
+  isOwnProfile: boolean;
+  uploadingAvatar: boolean;
+  onOpenStories: () => void;
+  onAvatarClick: () => void;
+}) {
+  return (
+    <div className="relative mx-auto h-36 w-36">
+      <motion.div
+        className="absolute -inset-1 rounded-full"
+        style={{
+          background: hasStories
+            ? "conic-gradient(from 0deg, #df5cff, #748cff, #7df7ff, #df5cff)"
+            : "linear-gradient(135deg, rgba(130,150,255,0.65), rgba(219,80,255,0.65))",
+        }}
+        animate={hasStories ? { rotate: 360 } : {}}
+        transition={hasStories ? { duration: 4, repeat: Infinity, ease: "linear" } : {}}
+      />
+      <button
+        type="button"
+        onClick={hasStories ? onOpenStories : undefined}
+        className={cn(
+          "relative h-full w-full overflow-hidden rounded-full border-[6px] border-[#030307] bg-gradient-to-br from-[#8aa3ff] via-[#6b67ff] to-[#d64cff] text-5xl font-bold text-white shadow-[0_28px_60px_rgba(91,74,255,0.36)]",
+          hasStories && "cursor-pointer"
+        )}
+        aria-label={hasStories ? "Открыть истории" : undefined}
+      >
+        {profile.avatar_url ? (
+          <Image src={profile.avatar_url} alt={name} fill className="object-cover" sizes="144px" />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center">
+            {name.slice(0, 1).toUpperCase()}
+          </span>
+        )}
+      </button>
+
+      {isOwnProfile ? (
+        <button
+          type="button"
+          onClick={onAvatarClick}
+          disabled={uploadingAvatar}
+          className="absolute bottom-2 right-2 z-10 flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-[#1b1b22]/88 text-white shadow-2xl backdrop-blur-2xl transition active:scale-95"
+          aria-label="Сменить аватар"
+        >
+          {uploadingAvatar ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
+        </button>
+      ) : (
+        <OnlineIndicator isOnline={profile.is_online} size="lg" className="z-10 ring-[#030307]" />
+      )}
+    </div>
+  );
 }
 
 export function ProfileHeader({
@@ -56,11 +144,39 @@ export function ProfileHeader({
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileStories, setProfileStories] = useState<Story[] | null>(null);
   const [hasStories, setHasStories] = useState(false);
+  const [following, setFollowing] = useState(false);
+  const [followPending, setFollowPending] = useState(false);
+  const [localFollowersCount, setLocalFollowersCount] = useState(profile.followers_count ?? 0);
+  const [localFollowingCount, setLocalFollowingCount] = useState(profile.following_count ?? 0);
+  const [editing, setEditing] = useState(false);
+  const [showFollowModal, setShowFollowModal] = useState<"followers" | "following" | null>(null);
+  const [followList, setFollowList] = useState<Profile[]>([]);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
 
-  // Check if this user has active stories
+  const [displayName, setDisplayName] = useState(profile.display_name ?? "");
+  const [bio, setBio] = useState(profile.bio ?? "");
+  const [location, setLocation] = useState(profile.location ?? "");
+  const [website, setWebsite] = useState(profile.website ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const name = profile.display_name ?? profile.username;
+  const birthday = formatBirthday(profile.date_of_birth);
+  const statusLabel = profile.is_online || isOwnProfile ? "online" : "last seen recently";
+
+  useEffect(() => {
+    setDisplayName(profile.display_name ?? "");
+    setBio(profile.bio ?? "");
+    setLocation(profile.location ?? "");
+    setWebsite(profile.website ?? "");
+  }, [profile.bio, profile.display_name, profile.location, profile.website]);
+
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
-    if (!supabase) return;
     supabase
       .from("stories")
       .select("id")
@@ -78,52 +194,18 @@ export function ProfileHeader({
       .eq("user_id", profile.id)
       .gt("expires_at", new Date().toISOString())
       .order("created_at", { ascending: true });
-    if (data && data.length > 0) {
-      setProfileStories(data as Story[]);
-    }
+    if (data && data.length > 0) setProfileStories(data as Story[]);
   };
-  const [following, setFollowing] = useState(false);
-  const [followPending, setFollowPending] = useState(false);
-  const [localFollowersCount, setLocalFollowersCount] = useState(
-    profile.followers_count ?? 0
-  );
-  const [localFollowingCount, setLocalFollowingCount] = useState(
-    profile.following_count ?? 0
-  );
-  const [editing, setEditing] = useState(false);
-  const [showFollowModal, setShowFollowModal] = useState<
-    "followers" | "following" | null
-  >(null);
-  const [followList, setFollowList] = useState<Profile[]>([]);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [uploadingCover, setUploadingCover] = useState(false);
 
-  // Edit form state
-  const [displayName, setDisplayName] = useState(profile.display_name ?? "");
-  const [bio, setBio] = useState(profile.bio ?? "");
-  const [location, setLocation] = useState(profile.location ?? "");
-  const [website, setWebsite] = useState(profile.website ?? "");
-  const [saving, setSaving] = useState(false);
-
-  const avatarInputRef = useRef<HTMLInputElement>(null);
-  const coverInputRef = useRef<HTMLInputElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  // Close menu on click outside
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
 
-  const name = profile.display_name ?? profile.username;
-
-  // Load follow status on mount
   useEffect(() => {
     if (!user || isOwnProfile) return;
     const supabase = getSupabaseBrowserClient();
@@ -136,16 +218,9 @@ export function ProfileHeader({
       .then(({ data }) => setFollowing(!!data));
   }, [user, profile.id, isOwnProfile]);
 
-  // Sync local counts when profile prop changes
-  useEffect(() => {
-    setLocalFollowersCount(profile.followers_count ?? 0);
-  }, [profile.followers_count]);
+  useEffect(() => setLocalFollowersCount(profile.followers_count ?? 0), [profile.followers_count]);
+  useEffect(() => setLocalFollowingCount(profile.following_count ?? 0), [profile.following_count]);
 
-  useEffect(() => {
-    setLocalFollowingCount(profile.following_count ?? 0);
-  }, [profile.following_count]);
-
-  // Real-time follower/following count updates
   const reloadFollowCounts = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
     const [{ count: followers }, { count: followingCount }] = await Promise.all([
@@ -158,50 +233,12 @@ export function ProfileHeader({
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
-
-    // Subscribe to follows where this profile is the target (followers change)
     const channel = supabase
       .channel(`follows:${profile.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "follows",
-          filter: `following_id=eq.${profile.id}`,
-        },
-        () => setLocalFollowersCount((c) => c + 1)
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "DELETE",
-          schema: "public",
-          table: "follows",
-          filter: `following_id=eq.${profile.id}`,
-        },
-        () => setLocalFollowersCount((c) => Math.max(0, c - 1))
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "follows",
-          filter: `follower_id=eq.${profile.id}`,
-        },
-        () => setLocalFollowingCount((c) => c + 1)
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "DELETE",
-          schema: "public",
-          table: "follows",
-          filter: `follower_id=eq.${profile.id}`,
-        },
-        () => setLocalFollowingCount((c) => Math.max(0, c - 1))
-      )
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "follows", filter: `following_id=eq.${profile.id}` }, () => setLocalFollowersCount((c) => c + 1))
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "follows", filter: `following_id=eq.${profile.id}` }, () => setLocalFollowersCount((c) => Math.max(0, c - 1)))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "follows", filter: `follower_id=eq.${profile.id}` }, () => setLocalFollowingCount((c) => c + 1))
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "follows", filter: `follower_id=eq.${profile.id}` }, () => setLocalFollowingCount((c) => Math.max(0, c - 1)))
       .subscribe();
 
     return () => {
@@ -213,32 +250,16 @@ export function ProfileHeader({
     setShowFollowModal(type);
     setFollowList([]);
     const supabase = getSupabaseBrowserClient();
-    if (type === "followers") {
-      const { data: followRows } = await supabase
-        .from("follows")
-        .select("follower_id")
-        .eq("following_id", profile.id);
-      const ids = (followRows ?? []).map((r) => r.follower_id);
-      if (ids.length > 0) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("*")
-          .in("id", ids);
-        setFollowList((data ?? []) as Profile[]);
-      }
-    } else {
-      const { data: followRows } = await supabase
-        .from("follows")
-        .select("following_id")
-        .eq("follower_id", profile.id);
-      const ids = (followRows ?? []).map((r) => r.following_id);
-      if (ids.length > 0) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("*")
-          .in("id", ids);
-        setFollowList((data ?? []) as Profile[]);
-      }
+    const idColumn = type === "followers" ? "follower_id" : "following_id";
+    const filterColumn = type === "followers" ? "following_id" : "follower_id";
+    const { data: followRows } = await supabase
+      .from("follows")
+      .select(idColumn)
+      .eq(filterColumn, profile.id);
+    const ids = (followRows ?? []).map((row) => row[idColumn as keyof typeof row] as string);
+    if (ids.length > 0) {
+      const { data } = await supabase.from("profiles").select("*").in("id", ids);
+      setFollowList((data ?? []) as Profile[]);
     }
   };
 
@@ -248,39 +269,24 @@ export function ProfileHeader({
     const supabase = getSupabaseBrowserClient();
 
     if (following) {
-      await supabase
-        .from("follows")
-        .delete()
-        .eq("follower_id", user.id)
-        .eq("following_id", profile.id);
+      await supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", profile.id);
       setFollowing(false);
       setLocalFollowersCount((c) => Math.max(0, c - 1));
     } else {
-      await supabase.from("follows").insert({
-        follower_id: user.id,
-        following_id: profile.id,
-      });
+      await supabase.from("follows").insert({ follower_id: user.id, following_id: profile.id });
       setFollowing(true);
       setLocalFollowersCount((c) => c + 1);
     }
     setFollowPending(false);
   };
 
-  const uploadToStorage = async (
-    folder: string,
-    file: File
-  ): Promise<string | null> => {
+  const uploadToStorage = async (folder: string, file: File): Promise<string | null> => {
     if (!user) return null;
     const supabase = getSupabaseBrowserClient();
     const ext = file.name.split(".").pop();
     const path = `${folder}/${user.id}.${ext}`;
-
-    // Remove old file first (ignore errors if it doesn't exist)
     await supabase.storage.from("media").remove([path]);
-
-    const { error: uploadErr } = await supabase.storage
-      .from("media")
-      .upload(path, file);
+    const { error: uploadErr } = await supabase.storage.from("media").upload(path, file);
     if (uploadErr) {
       console.error(`${folder} upload error:`, uploadErr);
       return null;
@@ -289,9 +295,7 @@ export function ProfileHeader({
     return `${data.publicUrl}?t=${Date.now()}`;
   };
 
-  const handleAvatarUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
     setUploadingAvatar(true);
@@ -301,12 +305,7 @@ export function ProfileHeader({
       return;
     }
     const supabase = getSupabaseBrowserClient();
-    const { data: updated } = await supabase
-      .from("profiles")
-      .update({ avatar_url: url })
-      .eq("id", user.id)
-      .select()
-      .single();
+    const { data: updated } = await supabase.from("profiles").update({ avatar_url: url }).eq("id", user.id).select().single();
     if (updated) {
       setStoreProfile(updated as Profile);
       onProfileUpdated?.(updated as Profile);
@@ -314,9 +313,7 @@ export function ProfileHeader({
     setUploadingAvatar(false);
   };
 
-  const handleCoverUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
     setUploadingCover(true);
@@ -326,12 +323,7 @@ export function ProfileHeader({
       return;
     }
     const supabase = getSupabaseBrowserClient();
-    const { data: updated } = await supabase
-      .from("profiles")
-      .update({ cover_url: url })
-      .eq("id", user.id)
-      .select()
-      .single();
+    const { data: updated } = await supabase.from("profiles").update({ cover_url: url }).eq("id", user.id).select().single();
     if (updated) {
       setStoreProfile(updated as Profile);
       onProfileUpdated?.(updated as Profile);
@@ -363,367 +355,266 @@ export function ProfileHeader({
     setSaving(false);
   };
 
-  return (
-    <div>
-      {/* Cover photo with gradient overlay */}
-      <div className="relative h-40 sm:h-56 bg-gradient-to-br from-purple-600/30 to-emerald-500/20 rounded-3xl overflow-hidden">
-        {profile.cover_url && (
-          <Image
-            src={profile.cover_url}
-            alt="Cover"
-            fill
-            className="object-cover"
-            sizes="100vw"
-          />
-        )}
-        {/* Gradient overlay at bottom */}
-        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[var(--bg-base)] to-transparent" />
+  const scrollToPosts = () => {
+    document.getElementById("profile-posts")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
-        {isOwnProfile && (
-          <>
+  return (
+    <section className="relative overflow-hidden bg-[#030307] px-4 pb-6 pt-[calc(env(safe-area-inset-top,0px)+0.75rem)] text-white">
+      <div className="pointer-events-none absolute inset-0">
+        {profile.cover_url ? (
+          <Image src={profile.cover_url} alt="" fill className="object-cover opacity-20 blur-xl scale-110" sizes="100vw" />
+        ) : null}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(107,103,255,0.20),transparent_34%),linear-gradient(180deg,rgba(0,0,0,0.10),#030307_72%)]" />
+      </div>
+
+      <div className="relative z-10 mx-auto flex max-w-2xl items-center justify-between">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.09] text-white shadow-[0_16px_34px_rgba(0,0,0,0.34)] backdrop-blur-2xl transition active:scale-95"
+          aria-label="Назад"
+        >
+          <ArrowLeft className="h-6 w-6" />
+        </button>
+
+        {isOwnProfile ? (
+          <div className="flex items-center rounded-full border border-white/10 bg-white/[0.08] p-1.5 shadow-[0_16px_34px_rgba(0,0,0,0.34)] backdrop-blur-2xl">
             <button
-              onClick={() => router.push("/settings")}
-              className="absolute top-3 right-3 z-10 size-9 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/60 transition-all duration-150"
-              aria-label="Настройки"
-            >
-              <Settings className="size-4.5" />
-            </button>
-            <button
+              type="button"
               onClick={() => coverInputRef.current?.click()}
               disabled={uploadingCover}
-              className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 bg-black/50 backdrop-blur-sm px-3 py-1.5 rounded-xl text-xs font-medium text-white hover:bg-black/60 transition-all duration-150"
+              className="flex h-10 w-10 items-center justify-center rounded-full text-white/80 transition hover:bg-white/10 hover:text-white"
+              aria-label="Сменить обложку"
             >
-              <Camera className="size-3.5" />
-              {uploadingCover ? "Загрузка..." : "Обложка"}
+              {uploadingCover ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
             </button>
-          </>
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="rounded-full px-4 py-2 text-[17px] font-semibold text-white transition hover:bg-white/10"
+            >
+              Edit
+            </button>
+          </div>
+        ) : (
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.09] text-white shadow-[0_16px_34px_rgba(0,0,0,0.34)] backdrop-blur-2xl transition active:scale-95"
+              aria-label="Еще"
+            >
+              <MoreHorizontal className="h-6 w-6" />
+            </button>
+            <AnimatePresence>
+              {menuOpen && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.92, y: -4 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.92, y: -4 }}
+                  className="absolute right-0 top-full z-40 mt-2 min-w-[190px] overflow-hidden rounded-2xl border border-white/10 bg-[#18181f]/94 shadow-2xl backdrop-blur-2xl"
+                >
+                  <button
+                    onClick={async () => {
+                      if (blocked) await unblockUser(profile.id);
+                      else await blockUser(profile.id);
+                      setMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-sm text-red-300 transition hover:bg-red-500/10"
+                  >
+                    <Ban className="h-4 w-4" />
+                    {blocked ? "Разблокировать" : "Заблокировать"}
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         )}
-        <input
-          ref={coverInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleCoverUpload}
-        />
       </div>
 
-      {/* Profile info */}
-      <div className="px-4 -mt-10 space-y-4">
-        {/* Avatar row */}
-        <div className="flex items-end justify-between">
-          <div className="relative">
-            {/* Animated gradient ring — active when user has stories */}
-            <motion.div
-              className="absolute -inset-1 rounded-full"
-              style={{
-                background: hasStories
-                  ? "conic-gradient(from 0deg, #a855f7, #00e676, #7c3aed, #a855f7)"
-                  : "var(--border)",
-              }}
-              animate={hasStories ? { rotate: 360 } : {}}
-              transition={hasStories ? {
-                duration: 4,
-                repeat: Infinity,
-                ease: "linear",
-              } : {}}
-            />
-            <div
-              className={cn("relative rounded-full bg-[var(--bg-base)] p-[3px]", hasStories && "cursor-pointer")}
-              onClick={hasStories ? openStories : undefined}
-            >
-              <Avatar className="size-20">
-                {profile.avatar_url ? (
-                  <AvatarImage src={profile.avatar_url} alt={name} />
-                ) : null}
-                <AvatarFallback className="text-lg font-bold bg-[var(--bg-elevated)] text-[var(--text-primary)]">
-                  {name.slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-            </div>
+      <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+      <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
 
-            {isOwnProfile ? (
-              <button
-                onClick={() => avatarInputRef.current?.click()}
-                disabled={uploadingAvatar}
-                className="absolute bottom-0 right-0 z-10 size-7 rounded-full bg-[var(--accent-blue)] text-white flex items-center justify-center shadow-md hover:bg-[var(--accent-blue)]/80 transition-colors"
-                aria-label="Change avatar"
-              >
-                <Camera className="size-3.5" />
-              </button>
-            ) : (
-              <OnlineIndicator
-                isOnline={profile.is_online}
-                size="lg"
-                className="z-10 ring-[var(--bg-base)]"
-              />
-            )}
-            <input
-              ref={avatarInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleAvatarUpload}
-            />
-          </div>
+      <div className="relative z-10 mx-auto mt-5 max-w-2xl text-center">
+        <ProfileAvatar
+          profile={profile}
+          name={name}
+          hasStories={hasStories}
+          isOwnProfile={isOwnProfile}
+          uploadingAvatar={uploadingAvatar}
+          onOpenStories={openStories}
+          onAvatarClick={() => avatarInputRef.current?.click()}
+        />
 
-          {/* Action buttons */}
-          <div className="flex gap-2 pb-2">
-            {isOwnProfile ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setEditing(!editing)}
-                className="rounded-xl border-[var(--border)] text-[var(--text-primary)]"
-              >
-                {editing ? "Отмена" : "Редактировать"}
-              </Button>
-            ) : (
-              <>
-                {blocked ? (
-                  <p className="text-sm text-red-400 bg-red-400/10 px-3 py-1.5 rounded-xl">
-                    Пользователь заблокирован
-                  </p>
-                ) : (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={onMessageClick}
-                      className="rounded-xl text-[var(--text-secondary)]"
-                    >
-                      <MessageCircle className="size-4" />
-                      Сообщение
-                    </Button>
-                    <motion.div whileTap={{ scale: 0.95 }}>
-                      <Button
-                        variant={following ? "outline" : "default"}
-                        size="sm"
-                        disabled={followPending}
-                        onClick={toggleFollow}
-                        className={cn(
-                          "rounded-xl transition-all duration-300",
-                          following
-                            ? "border-[var(--accent-blue)]/50 text-[var(--accent-blue)]"
-                            : "bg-[var(--accent-blue)] text-white hover:bg-[var(--accent-blue)]/90"
-                        )}
-                      >
-                        {followPending ? (
-                          <Loader2 className="size-4 animate-spin" />
-                        ) : following ? (
-                          <UserCheck className="size-4" />
-                        ) : (
-                          <UserPlus className="size-4" />
-                        )}
-                        <AnimatePresence mode="wait">
-                          <motion.span
-                            key={following ? "following" : "follow"}
-                            initial={{ opacity: 0, y: 6 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -6 }}
-                            transition={{ duration: 0.15 }}
-                          >
-                            {following ? "Подписки" : "Подписаться"}
-                          </motion.span>
-                        </AnimatePresence>
-                      </Button>
-                    </motion.div>
-                  </>
-                )}
-                <div className="relative" ref={menuRef}>
-                  <button onClick={() => setMenuOpen(!menuOpen)} className="p-2 rounded-xl hover:bg-[var(--bg-elevated)] transition-colors">
-                    <MoreHorizontal className="size-5 text-[var(--text-secondary)]" />
-                  </button>
-                  {menuOpen && (
-                    <div className="absolute right-0 top-full mt-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl shadow-lg z-50 overflow-hidden min-w-[180px]">
-                      <button
-                        onClick={async () => {
-                          if (blocked) { await unblockUser(profile.id); }
-                          else { await blockUser(profile.id); }
-                          setMenuOpen(false);
-                        }}
-                        className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-400 hover:bg-[var(--bg-surface)] transition-colors"
-                      >
-                        <Ban className="size-4" />
-                        {blocked ? "Разблокировать" : "Заблокировать"}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+        <h1 className="mt-5 text-[34px] font-semibold leading-tight tracking-[0.01em] text-white sm:text-[38px]">
+          {name}
+        </h1>
+        <div className="mt-1 flex items-center justify-center gap-2 text-[22px] text-white/58">
+          {isOwnProfile ? <span className="rounded-md bg-[#d95cff]/80 px-1.5 text-sm font-bold text-white">1</span> : null}
+          <span>{statusLabel}</span>
         </div>
+      </div>
 
-        {/* Name & bio */}
-        {editing ? (
-          <Dialog open={editing} onOpenChange={setEditing}>
-            <DialogContent className="bg-[var(--bg-surface)] border-[var(--border)] text-[var(--text-primary)] sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle className="text-[var(--text-primary)]">
-                  Редактировать профиль
-                </DialogTitle>
-                <DialogDescription className="text-[var(--text-secondary)]">
-                  Обновите информацию о профиле
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--text-secondary)]">
-                    Имя
-                  </label>
-                  <Input
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    className="h-10 rounded-xl bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text-primary)]"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-[var(--text-secondary)]">
-                    О себе
-                  </label>
-                  <textarea
-                    value={bio}
-                    onChange={(e) => setBio(e.target.value)}
-                    rows={3}
-                    maxLength={200}
-                    className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] rounded-xl px-3 py-2 text-sm text-[var(--text-primary)] resize-none outline-none input-focus transition-colors"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--text-secondary)]">
-                      Местоположение
-                    </label>
-                    <Input
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
-                      className="h-10 rounded-xl bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text-primary)]"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-[var(--text-secondary)]">
-                      Сайт
-                    </label>
-                    <Input
-                      value={website}
-                      onChange={(e) => setWebsite(e.target.value)}
-                      className="h-10 rounded-xl bg-[var(--bg-elevated)] border-[var(--border)] text-[var(--text-primary)]"
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setEditing(false)}
-                    className="rounded-xl text-[var(--text-secondary)]"
-                  >
-                    Отмена
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={saving}
-                    onClick={saveProfile}
-                    className="rounded-xl bg-[var(--accent-blue)] text-white hover:bg-[var(--accent-blue)]/90"
-                  >
-                    {saving && (
-                      <Loader2 className="size-3.5 animate-spin mr-1" />
-                    )}
-                    Сохранить
-                  </Button>
-                </div>
+      {!isOwnProfile && (
+        <div className="relative z-10 mx-auto mt-9 grid max-w-2xl grid-cols-4 gap-3">
+          <button
+            type="button"
+            onClick={onMessageClick}
+            disabled={blocked}
+            className="flex h-20 flex-col items-center justify-center gap-1 rounded-[1.5rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95 disabled:opacity-45"
+          >
+            <MessageCircle className="h-7 w-7" />
+            <span className="text-sm">message</span>
+          </button>
+          <button
+            type="button"
+            onClick={toggleFollow}
+            disabled={followPending || blocked}
+            className="flex h-20 flex-col items-center justify-center gap-1 rounded-[1.5rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95 disabled:opacity-45"
+          >
+            {followPending ? <Loader2 className="h-7 w-7 animate-spin" /> : following ? <UserCheck className="h-7 w-7" /> : <UserPlus className="h-7 w-7" />}
+            <span className="text-sm">{following ? "following" : "follow"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={scrollToPosts}
+            className="flex h-20 flex-col items-center justify-center gap-1 rounded-[1.5rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95"
+          >
+            <Search className="h-7 w-7" />
+            <span className="text-sm">posts</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            className="flex h-20 flex-col items-center justify-center gap-1 rounded-[1.5rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95"
+          >
+            <MoreHorizontal className="h-7 w-7" />
+            <span className="text-sm">more</span>
+          </button>
+        </div>
+      )}
+
+      <div className="relative z-10 mx-auto mt-8 max-w-2xl overflow-hidden rounded-[2rem] bg-[#1b1b1f] px-5 py-4 text-left shadow-[0_24px_64px_rgba(0,0,0,0.36)]">
+        <div className="space-y-4 divide-y divide-white/8">
+          <div className="pb-4">
+            <p className="text-[19px] leading-tight text-white">username</p>
+            <div className="mt-1 flex items-center justify-between gap-4">
+              <p className="truncate text-[25px] leading-tight text-[#ed78ff]">@{profile.username}</p>
+              <AtSign className="h-7 w-7 shrink-0 text-[#ed78ff]" />
+            </div>
+          </div>
+
+          {birthday && isOwnProfile ? (
+            <div className="py-4">
+              <p className="text-[19px] leading-tight text-white">birthday</p>
+              <div className="mt-1 flex items-center gap-2 text-[24px] leading-tight text-white/88">
+                <CalendarDays className="h-5 w-5 text-white/42" />
+                <span>{birthday}</span>
               </div>
-            </DialogContent>
-          </Dialog>
-        ) : null}
+            </div>
+          ) : null}
 
-        <div className="space-y-2">
-          <div>
-            <h1 className="text-xl font-bold text-[var(--text-primary)]">
-              {name}
-            </h1>
-            <p className="text-sm text-[var(--text-secondary)]">
-              @{profile.username}
+          <div className="py-4">
+            <p className="text-[19px] leading-tight text-white">bio</p>
+            <p className="mt-1 whitespace-pre-wrap text-[23px] leading-snug text-white/88">
+              {profile.bio || (isOwnProfile ? "Добавьте пару строк о себе" : "Пользователь пока ничего не написал")}
             </p>
           </div>
-          {profile.bio && (
-            <p className="text-sm text-[var(--text-primary)] leading-relaxed">
-              {profile.bio}
-            </p>
+
+          {(profile.location || profile.website) && (
+            <div className="py-4">
+              <p className="text-[19px] leading-tight text-white">links</p>
+              <div className="mt-2 flex flex-wrap gap-3 text-[17px] text-white/70">
+                {profile.location && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <MapPin className="h-4 w-4" />
+                    {profile.location}
+                  </span>
+                )}
+                {profile.website && (
+                  <a href={profile.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[#ed78ff]">
+                    <LinkIcon className="h-4 w-4" />
+                    {profile.website.replace(/^https?:\/\//, "")}
+                  </a>
+                )}
+              </div>
+            </div>
           )}
 
-          {/* Location & website info row */}
-          <div className="flex flex-wrap gap-4 text-xs text-[var(--text-secondary)]">
-            {profile.location && (
-              <span className="flex items-center gap-1">
-                <MapPin className="size-3.5" />
-                {profile.location}
-              </span>
-            )}
-            {profile.website && (
-              <a
-                href={profile.website}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-[var(--accent-blue)] hover:underline"
-              >
-                <LinkIcon className="size-3.5" />
-                {profile.website.replace(/^https?:\/\//, "")}
-              </a>
-            )}
+          <div className="grid grid-cols-3 gap-3 pt-4 text-center">
+            <div>
+              <AnimatedCounter value={profile.posts_count ?? 0} className="text-[23px] font-semibold text-white" />
+              <p className="text-sm text-white/45">posts</p>
+            </div>
+            <button type="button" onClick={() => openFollowModal("followers")} className="transition hover:opacity-75">
+              <AnimatedCounter value={localFollowersCount} className="text-[23px] font-semibold text-white" />
+              <p className="text-sm text-white/45">followers</p>
+            </button>
+            <button type="button" onClick={() => openFollowModal("following")} className="transition hover:opacity-75">
+              <AnimatedCounter value={localFollowingCount} className="text-[23px] font-semibold text-white" />
+              <p className="text-sm text-white/45">following</p>
+            </button>
           </div>
-        </div>
-
-        {/* Stats row with AnimatedCounter */}
-        <div className="flex gap-6 py-3 border-t border-[var(--border)]">
-          <div className="text-center">
-            <AnimatedCounter
-              value={profile.posts_count ?? 0}
-              className="text-lg font-bold text-[var(--text-primary)]"
-            />
-            <p className="text-xs text-[var(--text-secondary)]">Посты</p>
-          </div>
-          <button
-            onClick={() => openFollowModal("followers")}
-            className="text-center hover:opacity-70 transition-opacity"
-          >
-            <AnimatedCounter
-              value={localFollowersCount}
-              className="text-lg font-bold text-[var(--text-primary)]"
-            />
-            <p className="text-xs text-[var(--text-secondary)]">Подписчики</p>
-          </button>
-          <button
-            onClick={() => openFollowModal("following")}
-            className="text-center hover:opacity-70 transition-opacity"
-          >
-            <AnimatedCounter
-              value={localFollowingCount}
-              className="text-lg font-bold text-[var(--text-primary)]"
-            />
-            <p className="text-xs text-[var(--text-secondary)]">Подписки</p>
-          </button>
         </div>
       </div>
 
-      {/* Followers / Following modal */}
-      <Dialog
-        open={showFollowModal !== null}
-        onOpenChange={(open) => {
-          if (!open) setShowFollowModal(null);
-        }}
-      >
-        <DialogContent className="bg-[var(--bg-surface)] border-[var(--border)] text-[var(--text-primary)] sm:max-w-sm">
+      {blocked && !isOwnProfile ? (
+        <div className="relative z-10 mx-auto mt-4 max-w-2xl rounded-2xl border border-red-400/15 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          Пользователь заблокирован
+        </div>
+      ) : null}
+
+      <Dialog open={editing} onOpenChange={setEditing}>
+        <DialogContent className="border-white/10 bg-[#17171d] text-white sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-[var(--text-primary)]">
-              {showFollowModal === "followers" ? "Подписчики" : "Подписки"}
-            </DialogTitle>
+            <DialogTitle className="text-white">Редактировать профиль</DialogTitle>
+            <DialogDescription className="text-white/50">Обновите информацию о профиле</DialogDescription>
           </DialogHeader>
-          <div className="max-h-80 overflow-y-auto -mx-4 divide-y divide-[var(--border)]">
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-white/50">Имя</label>
+              <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="h-11 rounded-2xl border-white/10 bg-white/[0.07] text-white" />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-white/50">О себе</label>
+              <textarea
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                rows={3}
+                maxLength={200}
+                className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.07] px-3 py-2 text-sm text-white outline-none placeholder:text-white/35"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-white/50">Местоположение</label>
+                <Input value={location} onChange={(e) => setLocation(e.target.value)} className="h-11 rounded-2xl border-white/10 bg-white/[0.07] text-white" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-white/50">Сайт</label>
+                <Input value={website} onChange={(e) => setWebsite(e.target.value)} className="h-11 rounded-2xl border-white/10 bg-white/[0.07] text-white" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setEditing(false)} className="rounded-2xl px-4 py-2 text-sm text-white/60 transition hover:bg-white/10">Отмена</button>
+              <button type="button" disabled={saving} onClick={saveProfile} className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#738cff] to-[#ed62ff] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showFollowModal !== null} onOpenChange={(open) => { if (!open) setShowFollowModal(null); }}>
+        <DialogContent className="border-white/10 bg-[#17171d] text-white sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-white">{showFollowModal === "followers" ? "Подписчики" : "Подписки"}</DialogTitle>
+          </DialogHeader>
+          <div className="-mx-4 max-h-80 overflow-y-auto divide-y divide-white/10">
             {followList.length === 0 ? (
-              <p className="text-center text-[var(--text-secondary)] text-sm py-10">
-                Пока нет пользователей
-              </p>
+              <p className="py-10 text-center text-sm text-white/45">Пока нет пользователей</p>
             ) : (
               followList.map((u) => (
                 <button
@@ -732,26 +623,15 @@ export function ProfileHeader({
                     setShowFollowModal(null);
                     router.push(`/profile/${u.username}`);
                   }}
-                  className="w-full flex items-center gap-3 px-5 py-3 hover:bg-[var(--bg-elevated)] transition-colors"
+                  className="flex w-full items-center gap-3 px-5 py-3 text-left transition hover:bg-white/8"
                 >
-                  <Avatar className="size-8">
-                    {u.avatar_url ? (
-                      <AvatarImage
-                        src={u.avatar_url}
-                        alt={u.display_name ?? u.username}
-                      />
-                    ) : null}
-                    <AvatarFallback className="text-xs bg-[var(--bg-elevated)] text-[var(--text-primary)]">
-                      {(u.display_name ?? u.username).slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
+                  <Avatar className="h-9 w-9">
+                    {u.avatar_url ? <AvatarImage src={u.avatar_url} alt={u.display_name ?? u.username} /> : null}
+                    <AvatarFallback className="bg-white/10 text-xs text-white">{(u.display_name ?? u.username).slice(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
-                  <div className="text-left">
-                    <p className="text-sm font-semibold text-[var(--text-primary)]">
-                      {u.display_name ?? u.username}
-                    </p>
-                    <p className="text-xs text-[var(--text-secondary)]">
-                      @{u.username}
-                    </p>
+                  <div>
+                    <p className="text-sm font-semibold text-white">{u.display_name ?? u.username}</p>
+                    <p className="text-xs text-white/45">@{u.username}</p>
                   </div>
                 </button>
               ))
@@ -760,14 +640,7 @@ export function ProfileHeader({
         </DialogContent>
       </Dialog>
 
-      {/* Story viewer */}
-      {profileStories && (
-        <StoryViewer
-          stories={profileStories}
-          startIndex={0}
-          onClose={() => setProfileStories(null)}
-        />
-      )}
-    </div>
+      {profileStories && <StoryViewer stories={profileStories} startIndex={0} onClose={() => setProfileStories(null)} />}
+    </section>
   );
 }

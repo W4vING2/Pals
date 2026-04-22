@@ -8,6 +8,7 @@ import { useMessages } from "@/hooks/useMessages";
 import {
   CACHE_TTL,
   useAppDataStore,
+  useChromeStore,
   useMessagesStore,
   type ProfileCacheEntry,
 } from "@/lib/store";
@@ -25,30 +26,22 @@ interface ProfilePageProps {
 
 function ProfileSkeleton() {
   return (
-    <div className="max-w-2xl mx-auto">
-      {/* Cover skeleton */}
-      <Skeleton className="h-40 sm:h-56 w-full rounded-3xl" />
-      <div className="px-4 -mt-10 space-y-4">
-        {/* Avatar skeleton */}
-        <div className="flex items-end justify-between">
-          <Skeleton className="size-20 rounded-full ring-4 ring-[var(--bg-base)]" />
-          <Skeleton className="h-9 w-28 rounded-xl" />
-        </div>
-        {/* Name lines */}
-        <div className="space-y-2">
-          <Skeleton className="h-6 w-40 rounded-lg" />
-          <Skeleton className="h-4 w-24 rounded-lg" />
-          <Skeleton className="h-4 w-full max-w-xs rounded-lg" />
-        </div>
-        {/* Stats row */}
-        <div className="flex gap-6 py-3 border-t border-[var(--border)]">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="space-y-1">
-              <Skeleton className="h-5 w-8 rounded" />
-              <Skeleton className="h-3 w-14 rounded" />
-            </div>
-          ))}
-        </div>
+    <div className="mx-auto max-w-2xl px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)]">
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-12 w-12 rounded-full bg-white/8" />
+        <Skeleton className="h-12 w-24 rounded-full bg-white/8" />
+      </div>
+      <div className="mt-6 flex flex-col items-center">
+        <Skeleton className="h-36 w-36 rounded-full bg-white/8" />
+        <Skeleton className="mt-5 h-10 w-44 rounded-xl bg-white/8" />
+        <Skeleton className="mt-2 h-6 w-28 rounded-xl bg-white/8" />
+      </div>
+      <div className="mt-8 rounded-[2rem] bg-[#1b1b1f] p-5">
+        <Skeleton className="h-7 w-28 rounded bg-white/8" />
+        <Skeleton className="mt-2 h-8 w-40 rounded bg-white/8" />
+        <Skeleton className="mt-6 h-px w-full bg-white/8" />
+        <Skeleton className="mt-6 h-7 w-16 rounded bg-white/8" />
+        <Skeleton className="mt-2 h-16 w-full rounded bg-white/8" />
       </div>
     </div>
   );
@@ -61,6 +54,7 @@ export default function ProfilePage({ params }: ProfilePageProps) {
   const { getOrCreateConversation } = useMessages();
   const profileCache = useAppDataStore((s) => s.profilesByUsername[username]);
   const setProfileCache = useAppDataStore((s) => s.setProfileCache);
+  const setMobileNavHidden = useChromeStore((s) => s.setMobileNavHidden);
 
   const [profile, setProfile] = useState<Profile | null>(profileCache?.profile ?? null);
   const [posts, setPosts] = useState<Post[]>(profileCache?.posts ?? []);
@@ -72,6 +66,11 @@ export default function ProfilePage({ params }: ProfilePageProps) {
       router.replace("/auth");
     }
   }, [user, authLoading, router]);
+
+  useEffect(() => {
+    setMobileNavHidden(true);
+    return () => setMobileNavHidden(false);
+  }, [setMobileNavHidden]);
 
   useEffect(() => {
     if (!username) return;
@@ -163,7 +162,7 @@ export default function ProfilePage({ params }: ProfilePageProps) {
 
   if (authLoading || loadingProfile) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-6">
+      <div className="min-h-dvh bg-[#030307] text-white">
         <ProfileSkeleton />
       </div>
     );
@@ -171,11 +170,11 @@ export default function ProfilePage({ params }: ProfilePageProps) {
 
   if (!profile) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <p className="text-2xl font-bold text-[var(--text-primary)] mb-2">
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-[#030307] px-4 text-center text-white">
+        <p className="mb-2 text-2xl font-bold">
           Пользователь не найден
         </p>
-        <p className="text-[var(--text-secondary)]">
+        <p className="text-white/45">
           @{username} не существует
         </p>
       </div>
@@ -185,8 +184,8 @@ export default function ProfilePage({ params }: ProfilePageProps) {
   const isOwn = user?.id === profile.id;
 
   return (
-    <PageTransition>
-      <div className="max-w-2xl mx-auto pb-6">
+    <PageTransition className="min-h-dvh bg-[#030307] text-white">
+      <div className="mx-auto max-w-2xl pb-10">
         <ProfileHeader
           profile={profile}
           isOwnProfile={isOwn}
@@ -201,7 +200,12 @@ export default function ProfilePage({ params }: ProfilePageProps) {
           }}
         />
 
-        <div className="px-4 mt-4">
+        <div id="profile-posts" className="px-4 pt-4">
+          <div className="mx-auto mb-7 flex w-fit rounded-full border border-white/10 bg-[#1b1b1f] p-1 shadow-[0_20px_48px_rgba(0,0,0,0.34)]">
+            <button className="inline-flex items-center gap-2 rounded-full bg-white/10 px-6 py-2.5 text-[18px] font-semibold text-white">
+              Posts
+            </button>
+          </div>
           <PostGrid posts={posts} loading={loadingPosts} />
         </div>
       </div>
