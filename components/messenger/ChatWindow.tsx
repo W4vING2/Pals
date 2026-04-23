@@ -214,7 +214,7 @@ export function ChatWindow({
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initialMsgIdsRef = useRef<Set<string>>(new Set());
 
@@ -232,7 +232,9 @@ export function ChatWindow({
   }, [conversation?.id]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const container = messagesScrollRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
   useEffect(() => {
@@ -613,7 +615,10 @@ export function ChatWindow({
       </AnimatePresence>
 
       {/* Messages */}
-      <div className="relative z-10 min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 pb-4 pt-2 sm:px-5">
+      <div
+        ref={messagesScrollRef}
+        className="relative z-10 min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain px-3 pb-4 pt-2 sm:px-5"
+      >
         {loading ? (
           <SkeletonMessages />
         ) : displayMessages.length === 0 ? (
@@ -662,7 +667,6 @@ export function ChatWindow({
             );
           })
         )}
-        <div ref={bottomRef} />
       </div>
 
       {/* Typing indicator */}

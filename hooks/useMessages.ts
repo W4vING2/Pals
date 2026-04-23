@@ -39,6 +39,16 @@ export type ConversationWithDetails = Conversation & {
 
 const CONVERSATIONS_CACHE_KEY = "messages:conversations";
 const messagesCacheKey = (conversationId: string) => `messages:${conversationId}`;
+const ENABLE_NEW_MESSAGE_E2E = false;
+const DECRYPTION_FAILED_TEXT = "🔒 Сообщение недоступно после смены устройства";
+
+function hasDecryptionPlaceholder(messages: Message[]) {
+  return messages.some(
+    (message) =>
+      message.content?.includes("Не удалось расшифровать") ||
+      message.content === DECRYPTION_FAILED_TEXT
+  );
+}
 
 export function useMessages() {
   const { user, profile: storeProfile } = useAuthStore();
@@ -134,7 +144,7 @@ export function useMessages() {
       msgs.map(async (m) => {
         if (!isEncrypted(m.content)) return m;
         const decrypted = await decryptMessage(m.content!, key);
-        return { ...m, content: decrypted ?? "🔒 Не удалось расшифровать" };
+        return { ...m, content: decrypted ?? DECRYPTION_FAILED_TEXT };
       })
     );
   }, [getEncKey]);
@@ -157,7 +167,7 @@ export function useMessages() {
     const isFirstLoad = !hasLoadedConvsRef.current;
     const memoryFresh = Date.now() - conversationsLoadedAt < CACHE_TTL.conversations;
 
-    if (!force && conversationsLoadedAt > 0 && memoryFresh) {
+    if (!force && conversations.length > 0 && conversationsLoadedAt > 0 && memoryFresh) {
       hasLoadedConvsRef.current = true;
       setLoadingConversations(false);
       return;
@@ -168,7 +178,7 @@ export function useMessages() {
         user.id,
         CONVERSATIONS_CACHE_KEY
       );
-      if (cached?.value) {
+      if (cached?.value && cached.value.length > 0) {
         setConversations(cached.value);
         setCachedConversations(cached.value, cached.updated_at);
         setLoadingConversations(false);
@@ -305,13 +315,13 @@ export function useMessages() {
     let hydratedMessages = false;
 
     if (!options?.silent) {
-      if (messageLoadedAt > 0 && memoryFresh) {
+      if (messageLoadedAt > 0 && memoryFresh && !hasDecryptionPlaceholder(cachedMessages)) {
         setMessages(cachedMessages);
         setLoadingMessages(false);
         setActiveConversationId(conversationId);
         return;
       }
-      if (cachedMessages.length > 0) {
+      if (cachedMessages.length > 0 && !hasDecryptionPlaceholder(cachedMessages)) {
         setMessages(cachedMessages);
         setLoadingMessages(false);
         hydratedMessages = true;
@@ -320,7 +330,7 @@ export function useMessages() {
           user.id,
           messagesCacheKey(conversationId)
         );
-        if (cached?.value) {
+        if (cached?.value && !hasDecryptionPlaceholder(cached.value)) {
           setMessages(cached.value);
           setCachedMessagesForConversation(conversationId, cached.value, cached.updated_at);
           setLoadingMessages(false);
@@ -331,7 +341,7 @@ export function useMessages() {
           }
         } else {
           const legacyCached = await safeCache(() => getCachedMessages(conversationId), []);
-          if (legacyCached.length > 0) {
+          if (legacyCached.length > 0 && !hasDecryptionPlaceholder(legacyCached as Message[])) {
             setMessages(legacyCached as Message[]);
             setCachedMessagesForConversation(conversationId, legacyCached as Message[]);
             setLoadingMessages(false);
@@ -384,15 +394,17 @@ export function useMessages() {
 
       if (enriched) {
         setMessages(enriched);
-        setCachedMessagesForConversation(conversationId, enriched);
-        safeCache(() => cacheMessages(conversationId, enriched), undefined);
-        if (user) {
-          void setCachedQuery(
-            user.id,
-            messagesCacheKey(conversationId),
-            enriched,
-            CACHE_TTL.messages
-          );
+        if (!hasDecryptionPlaceholder(enriched)) {
+          setCachedMessagesForConversation(conversationId, enriched);
+          safeCache(() => cacheMessages(conversationId, enriched), undefined);
+          if (user) {
+            void setCachedQuery(
+              user.id,
+              messagesCacheKey(conversationId),
+              enriched,
+              CACHE_TTL.messages
+            );
+          }
         }
       }
     } catch (err) {
@@ -434,8 +446,8 @@ export function useMessages() {
 
       // Encrypt text content if possible (DMs only)
       let encryptedContent = content;
-      const encKey = await getEncKey(conversationId);
-      if (encKey && content) {
+      const encKey = ENABLE_NEW_MESSAGE_E2E ? await getEncKey(conversationId) : null;
+      if (ENABLE_NEW_MESSAGE_E2E && encKey && content) {
         try {
           encryptedContent = await encryptMessage(content, encKey);
         } catch {
@@ -569,8 +581,8 @@ export function useMessages() {
       // Re-encrypt: messages in state are decrypted for display
       let contentToSend = msg.content || null;
       if (contentToSend) {
-        const encKey = await getEncKey(msg.conversation_id);
-        if (encKey) {
+        const encKey = ENABLE_NEW_MESSAGE_E2E ? await getEncKey(msg.conversation_id) : null;
+        if (ENABLE_NEW_MESSAGE_E2E && encKey) {
           try {
             contentToSend = await encryptMessage(contentToSend, encKey);
           } catch {
@@ -630,8 +642,8 @@ export function useMessages() {
       const msg = messages.find((m) => m.id === messageId);
       let contentToStore = newContent;
       if (msg) {
-        const encKey = await getEncKey(msg.conversation_id);
-        if (encKey) {
+        const encKey = ENABLE_NEW_MESSAGE_E2E ? await getEncKey(msg.conversation_id) : null;
+        if (ENABLE_NEW_MESSAGE_E2E && encKey) {
           try {
             contentToStore = await encryptMessage(newContent, encKey);
           } catch {
@@ -887,7 +899,7 @@ export function useMessages() {
             const key = await getEncKey(activeConversationId);
             if (key && msg.content) {
               const decrypted = await decryptMessage(msg.content, key);
-              msg = { ...msg, content: decrypted ?? "🔒 Не удалось расшифровать" };
+              msg = { ...msg, content: decrypted ?? DECRYPTION_FAILED_TEXT };
             }
           }
           setMessages((prev) => {
@@ -947,7 +959,7 @@ export function useMessages() {
           if (isEncrypted(displayContent)) {
             const key = await getEncKey(activeConversationId);
             if (key && displayContent) {
-              displayContent = await decryptMessage(displayContent, key) ?? "🔒 Не удалось расшифровать";
+              displayContent = await decryptMessage(displayContent, key) ?? DECRYPTION_FAILED_TEXT;
             }
           }
           setMessages((prev) =>
@@ -1199,8 +1211,8 @@ export function useMessages() {
         // For text, re-encrypt for the target conversation
         let contentToSend = message.content;
         if (contentToSend) {
-          const encKey = await getEncKey(convId);
-          if (encKey) {
+          const encKey = ENABLE_NEW_MESSAGE_E2E ? await getEncKey(convId) : null;
+          if (ENABLE_NEW_MESSAGE_E2E && encKey) {
             try {
               const { encryptMessage } = await import("@/lib/crypto");
               contentToSend = await encryptMessage(contentToSend, encKey);

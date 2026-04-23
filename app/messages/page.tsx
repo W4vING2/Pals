@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/hooks/useMessages";
 import { useCalls } from "@/hooks/useCalls";
@@ -98,6 +98,27 @@ export default function MessagesPage() {
       router.replace("/auth");
     }
   }, [user, authLoading, router]);
+
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const previousHtmlOverflow = html.style.overflow;
+    const previousBodyOverflow = body.style.overflow;
+    const previousHtmlOverscroll = html.style.overscrollBehaviorY;
+    const previousBodyOverscroll = body.style.overscrollBehaviorY;
+
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    html.style.overscrollBehaviorY = "none";
+    body.style.overscrollBehaviorY = "none";
+
+    return () => {
+      html.style.overflow = previousHtmlOverflow;
+      body.style.overflow = previousBodyOverflow;
+      html.style.overscrollBehaviorY = previousHtmlOverscroll;
+      body.style.overscrollBehaviorY = previousBodyOverscroll;
+    };
+  }, []);
 
   const handleSelectConversation = useCallback((id: string) => {
     processedRef.current = id;
@@ -267,7 +288,8 @@ export default function MessagesPage() {
   }, [setMobileNavHidden]);
 
   const activeConv = conversations.find((c) => c.id === activeConversationId) ?? null;
-  const pageHeightClass = "h-dvh";
+  const chatLoading = loadingMessages || loadingConversations || (!!activeConversationId && !activeConv);
+  const pageHeightClass = "h-[100dvh] max-h-[100dvh] overflow-hidden";
 
   useEffect(() => {
     return () => {
@@ -340,7 +362,7 @@ export default function MessagesPage() {
           <ChatWindow
             conversation={activeConv}
             messages={messages}
-            loading={loadingMessages || loadingConversations}
+            loading={chatLoading}
             onSend={handleSend}
             onUploadImage={uploadMessageImage}
             onEditMessage={editMessage}
@@ -360,47 +382,59 @@ export default function MessagesPage() {
 
         {/* Mobile: animated slide between list and chat */}
         <div className="lg:hidden w-full h-full relative overflow-hidden bg-[#030307]">
-          <motion.div
-            className="flex h-full w-[200%]"
-            animate={{ x: mobileView === "chat" ? "-50%" : "0%" }}
-            transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
-            style={{ willChange: "transform" }}
-          >
-            <div className="h-full w-1/2 shrink-0 overflow-hidden bg-[#030307]">
-              <ConversationList
-                conversations={conversations}
-                activeId={activeConversationId}
-                loading={loadingConversations}
-                onSelect={handleSelectConversation}
-                onCreateGroup={() => setCreateGroupOpen(true)}
-                onMuteConversation={muteConversation}
-                suggestions={suggestions}
-                loadingSuggestions={loadingSuggestions}
-                onStartSuggestion={handleStartSuggestion}
-              />
-            </div>
-            <div className="h-full w-1/2 shrink-0 overflow-hidden bg-[#030307] shadow-[-28px_0_70px_rgba(0,0,0,0.42)]">
-              <ChatWindow
-                conversation={activeConv}
-                messages={messages}
-                loading={loadingMessages || loadingConversations}
-                onSend={handleSend}
-                onUploadImage={uploadMessageImage}
-                onEditMessage={editMessage}
-                onDeleteMessage={deleteMessage}
-                onToggleReaction={toggleReaction}
-                onRetryMessage={retryMessage}
-                onInitiateCall={handleInitiateCall}
-                onOpenGroupSettings={() => setGroupSettingsOpen(true)}
-                onBack={handleBack}
-                onSetDisappearTimer={setDisappearTimer}
-                onForwardMessage={forwardMessage}
-                onPinMessage={handlePinMessage}
-                onUnpinMessage={handleUnpinMessage}
-                conversations={conversations}
-              />
-            </div>
-          </motion.div>
+          <AnimatePresence mode="wait" initial={false}>
+            {mobileView === "list" ? (
+              <motion.div
+                key="conversation-list"
+                className="h-full overflow-hidden bg-[#030307]"
+                initial={{ opacity: 0.96 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0.96 }}
+                transition={{ duration: 0.12 }}
+              >
+                <ConversationList
+                  conversations={conversations}
+                  activeId={activeConversationId}
+                  loading={loadingConversations}
+                  onSelect={handleSelectConversation}
+                  onCreateGroup={() => setCreateGroupOpen(true)}
+                  onMuteConversation={muteConversation}
+                  suggestions={suggestions}
+                  loadingSuggestions={loadingSuggestions}
+                  onStartSuggestion={handleStartSuggestion}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="chat-window"
+                className="h-full overflow-hidden bg-[#030307]"
+                initial={{ opacity: 0.96 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0.96 }}
+                transition={{ duration: 0.12 }}
+              >
+                <ChatWindow
+                  conversation={activeConv}
+                  messages={messages}
+                  loading={chatLoading}
+                  onSend={handleSend}
+                  onUploadImage={uploadMessageImage}
+                  onEditMessage={editMessage}
+                  onDeleteMessage={deleteMessage}
+                  onToggleReaction={toggleReaction}
+                  onRetryMessage={retryMessage}
+                  onInitiateCall={handleInitiateCall}
+                  onOpenGroupSettings={() => setGroupSettingsOpen(true)}
+                  onBack={handleBack}
+                  onSetDisappearTimer={setDisappearTimer}
+                  onForwardMessage={forwardMessage}
+                  onPinMessage={handlePinMessage}
+                  onUnpinMessage={handleUnpinMessage}
+                  conversations={conversations}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
