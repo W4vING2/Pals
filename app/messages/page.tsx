@@ -102,21 +102,56 @@ export default function MessagesPage() {
   useEffect(() => {
     const html = document.documentElement;
     const body = document.body;
+    const scrollY = window.scrollY;
     const previousHtmlOverflow = html.style.overflow;
     const previousBodyOverflow = body.style.overflow;
+    const previousBodyPosition = body.style.position;
+    const previousBodyTop = body.style.top;
+    const previousBodyLeft = body.style.left;
+    const previousBodyRight = body.style.right;
+    const previousBodyWidth = body.style.width;
+    const previousHtmlHeight = html.style.height;
+    const previousBodyHeight = body.style.height;
     const previousHtmlOverscroll = html.style.overscrollBehaviorY;
     const previousBodyOverscroll = body.style.overscrollBehaviorY;
+    const previousTouchAction = body.style.touchAction;
 
     html.style.overflow = "hidden";
     body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.width = "100%";
+    html.style.height = "100%";
+    body.style.height = "100dvh";
     html.style.overscrollBehaviorY = "none";
     body.style.overscrollBehaviorY = "none";
+    body.style.touchAction = "none";
+
+    const stopOuterTouchScroll = (event: TouchEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest("[data-chat-scrollable='true']")) return;
+      event.preventDefault();
+    };
+
+    document.addEventListener("touchmove", stopOuterTouchScroll, { passive: false });
 
     return () => {
+      document.removeEventListener("touchmove", stopOuterTouchScroll);
       html.style.overflow = previousHtmlOverflow;
       body.style.overflow = previousBodyOverflow;
+      body.style.position = previousBodyPosition;
+      body.style.top = previousBodyTop;
+      body.style.left = previousBodyLeft;
+      body.style.right = previousBodyRight;
+      body.style.width = previousBodyWidth;
+      html.style.height = previousHtmlHeight;
+      body.style.height = previousBodyHeight;
       html.style.overscrollBehaviorY = previousHtmlOverscroll;
       body.style.overscrollBehaviorY = previousBodyOverscroll;
+      body.style.touchAction = previousTouchAction;
+      window.scrollTo(0, scrollY);
     };
   }, []);
 
@@ -289,7 +324,7 @@ export default function MessagesPage() {
 
   const activeConv = conversations.find((c) => c.id === activeConversationId) ?? null;
   const chatLoading = loadingMessages || loadingConversations || (!!activeConversationId && !activeConv);
-  const pageHeightClass = "h-[100dvh] max-h-[100dvh] overflow-hidden";
+  const pageHeightClass = "fixed inset-0 h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#030307] lg:static";
 
   useEffect(() => {
     return () => {

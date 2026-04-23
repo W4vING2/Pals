@@ -617,7 +617,8 @@ export function ChatWindow({
       {/* Messages */}
       <div
         ref={messagesScrollRef}
-        className="relative z-10 min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain px-3 pb-4 pt-2 sm:px-5"
+        data-chat-scrollable="true"
+        className="relative z-10 min-h-0 flex-1 touch-pan-y space-y-1.5 overflow-y-auto overscroll-contain px-3 pb-4 pt-2 sm:px-5"
       >
         {loading ? (
           <SkeletonMessages />
