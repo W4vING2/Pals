@@ -259,18 +259,34 @@ export default function ProfilePage({ params }: ProfilePageProps) {
 
   return (
     <PageTransition className="fixed inset-0 overflow-hidden bg-[#030307] text-white">
+      <motion.div
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 h-28"
+        initial={false}
+        animate={{
+          opacity: showCompactHeader ? 1 : 0,
+        }}
+        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(3,3,7,0.9) 0%, rgba(3,3,7,0.68) 48%, rgba(3,3,7,0) 100%)",
+          backdropFilter: showCompactHeader ? "blur(18px) saturate(165%)" : "blur(0px)",
+          WebkitBackdropFilter: showCompactHeader ? "blur(18px) saturate(165%)" : "blur(0px)",
+        }}
+      />
+
       <div className="pointer-events-none absolute inset-x-0 top-0 z-30 px-4 pt-[calc(env(safe-area-inset-top,0px)+0.35rem)]">
         <motion.div
           initial={false}
           animate={{
             opacity: showCompactHeader ? 1 : 0,
             y: showCompactHeader ? 0 : -18,
-            scale: showCompactHeader ? 1 : 0.96,
+            scale: showCompactHeader ? 1 : 0.94,
+            filter: showCompactHeader ? "blur(0px)" : "blur(8px)",
           }}
           transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
           className="pointer-events-auto mx-auto max-w-fit"
         >
-          <div className="glass-panel flex items-center gap-3 rounded-full px-3 py-2 shadow-[0_18px_42px_rgba(0,0,0,0.36)]">
+          <div className="glass-panel flex items-center gap-3 rounded-full border border-white/10 px-3 py-2 shadow-[0_20px_48px_rgba(0,0,0,0.42)]">
             <div className="relative h-10 w-10 overflow-hidden rounded-full bg-gradient-to-br from-[#8aa3ff] via-[#6b67ff] to-[#d64cff]">
               {profile.avatar_url ? (
                 <Image src={profile.avatar_url} alt={profileName} fill className="object-cover" sizes="40px" />
@@ -311,14 +327,26 @@ export default function ProfilePage({ params }: ProfilePageProps) {
             }}
           />
 
-          <div id="profile-posts" className="px-4 pt-4">
-            <div className="glass-panel mx-auto mb-7 flex w-fit rounded-full p-1 shadow-[0_20px_48px_rgba(0,0,0,0.34)] animate-slide-up">
+          <motion.div
+            id="profile-posts"
+            className="px-4 pt-4"
+            initial={{ opacity: 0, y: 18 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, amount: 0.12 }}
+            transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <motion.div
+              className="glass-panel mx-auto mb-7 flex w-fit rounded-full p-1 shadow-[0_20px_48px_rgba(0,0,0,0.34)]"
+              whileHover={{ y: -1, scale: 1.01 }}
+              whileTap={{ scale: 0.985 }}
+              transition={{ type: "spring", stiffness: 260, damping: 22 }}
+            >
               <button className="glass-button inline-flex items-center gap-2 rounded-full bg-white/10 px-6 py-2.5 text-[18px] font-semibold text-white">
                 Posts
               </button>
-            </div>
+            </motion.div>
             <PostGrid posts={posts} loading={loadingPosts} />
-          </div>
+          </motion.div>
         </div>
       </div>
     </PageTransition>

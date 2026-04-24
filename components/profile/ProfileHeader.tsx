@@ -52,6 +52,24 @@ const revealVariants = {
   }),
 };
 
+const sectionViewport = {
+  once: true,
+  amount: 0.2,
+} as const;
+
+const buttonSpring = {
+  type: "spring",
+  stiffness: 280,
+  damping: 20,
+  mass: 0.7,
+} as const;
+
+const buttonMotionProps = {
+  whileHover: { y: -2, scale: 1.014 },
+  whileTap: { y: 0, scale: 0.978 },
+  transition: buttonSpring,
+} as const;
+
 interface ProfileHeaderProps {
   profile: Profile;
   isOwnProfile: boolean;
@@ -399,36 +417,40 @@ export function ProfileHeader({
         custom={0}
         variants={revealVariants}
         initial="hidden"
-        animate="visible"
+        whileInView="visible"
+        viewport={sectionViewport}
         className="relative z-10 mx-auto flex max-w-2xl items-center justify-between"
       >
-        <button
+        <motion.button
           type="button"
           onClick={() => router.back()}
           className="glass-button glass-icon-button flex h-12 w-12 items-center justify-center rounded-full text-white"
           aria-label="Назад"
+          {...buttonMotionProps}
         >
           <ArrowLeft className="h-6 w-6" />
-        </button>
+        </motion.button>
 
         {isOwnProfile ? (
           <div className="glass-pill flex items-center rounded-full p-1.5">
-            <button
+            <motion.button
               type="button"
               onClick={() => coverInputRef.current?.click()}
               disabled={uploadingCover}
               className="glass-button flex h-10 w-10 items-center justify-center rounded-full text-white/80 hover:text-white"
               aria-label="Сменить обложку"
+              {...buttonMotionProps}
             >
               {uploadingCover ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
-            </button>
-            <button
+            </motion.button>
+            <motion.button
               type="button"
               onClick={() => setEditing(true)}
               className="glass-button rounded-full px-4 py-2 text-[17px] font-semibold text-white"
+              {...buttonMotionProps}
             >
               Edit
-            </button>
+            </motion.button>
           </div>
         ) : (
           <div className="h-12 w-12" aria-hidden="true" />
@@ -442,10 +464,12 @@ export function ProfileHeader({
         custom={0.08}
         variants={revealVariants}
         initial="hidden"
-        animate="visible"
+        whileInView="visible"
+        viewport={sectionViewport}
         className="relative z-10 mx-auto mt-3 max-w-2xl text-center"
       >
         <motion.div
+          layout
           animate={{ y: -heroLift, opacity: heroOpacity }}
           transition={{ type: "spring", stiffness: 180, damping: 26, mass: 0.8 }}
         >
@@ -473,61 +497,69 @@ export function ProfileHeader({
           custom={0.14}
           variants={revealVariants}
           initial="hidden"
-          animate="visible"
+          whileInView="visible"
+          viewport={sectionViewport}
+          layout
           className="relative z-10 mx-auto mt-6 grid max-w-2xl grid-cols-3 gap-2.5 sm:grid-cols-6"
         >
-          <button
+          <motion.button
             type="button"
             onClick={onMessageClick}
             disabled={blocked}
             className="glass-button glass-action-card flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] text-[#f06dff] disabled:opacity-45"
+            {...buttonMotionProps}
           >
             <MessageCircle className="h-5 w-5" />
             <span className="text-xs">message</span>
-          </button>
-          <button
+          </motion.button>
+          <motion.button
             type="button"
             onClick={toggleFollow}
             disabled={followPending || blocked}
             className="glass-button glass-action-card flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] text-[#f06dff] disabled:opacity-45"
+            {...buttonMotionProps}
           >
             {followPending ? <Loader2 className="h-5 w-5 animate-spin" /> : following ? <UserCheck className="h-5 w-5" /> : <UserPlus className="h-5 w-5" />}
             <span className="text-xs">{following ? "following" : "follow"}</span>
-          </button>
-          <button
+          </motion.button>
+          <motion.button
             type="button"
             onClick={scrollToPosts}
             className="glass-button glass-action-card flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] text-[#f06dff]"
+            {...buttonMotionProps}
           >
             <Search className="h-5 w-5" />
             <span className="text-xs">posts</span>
-          </button>
-          <button
+          </motion.button>
+          <motion.button
             type="button"
             onClick={handleBlockToggle}
             className="glass-button glass-action-card flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] text-[#ff6d91]"
+            {...buttonMotionProps}
           >
             <Ban className="h-5 w-5" />
             <span className="text-xs">{blocked ? "unblock" : "block"}</span>
-          </button>
-          <button
+          </motion.button>
+          <motion.button
             type="button"
             onClick={() => onCallClick?.("voice")}
             disabled={blocked}
             className="glass-button glass-action-card flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] text-[#f06dff] disabled:opacity-45"
+            {...buttonMotionProps}
           >
             <Phone className="h-5 w-5" />
             <span className="text-xs">audio</span>
-          </button>
-          <button
+          </motion.button>
+          <motion.button
             type="button"
             onClick={() => onCallClick?.("video")}
             disabled={blocked}
             className="glass-button glass-action-card flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] text-[#f06dff] disabled:opacity-45"
+            {...buttonMotionProps}
           >
             <Video className="h-5 w-5" />
             <span className="text-xs">video</span>
-          </button>
+          </motion.button>
         </motion.div>
       )}
 
@@ -535,7 +567,9 @@ export function ProfileHeader({
         custom={0.2}
         variants={revealVariants}
         initial="hidden"
-        animate="visible"
+        whileInView="visible"
+        viewport={sectionViewport}
+        layout
         className="glass-panel animate-float-drift relative z-10 mx-auto mt-6 max-w-2xl rounded-[1.65rem] px-4 py-3 text-left"
       >
         <div className="space-y-3 divide-y divide-white/8">
@@ -589,14 +623,24 @@ export function ProfileHeader({
               <AnimatedCounter value={profile.posts_count ?? 0} className="text-[20px] font-semibold text-white" />
               <p className="text-sm text-white/45">posts</p>
             </div>
-            <button type="button" onClick={() => openFollowModal("followers")} className="glass-button rounded-2xl py-1 transition hover:opacity-100">
+            <motion.button
+              type="button"
+              onClick={() => openFollowModal("followers")}
+              className="glass-button rounded-2xl py-1 transition hover:opacity-100"
+              {...buttonMotionProps}
+            >
               <AnimatedCounter value={localFollowersCount} className="text-[20px] font-semibold text-white" />
               <p className="text-sm text-white/45">followers</p>
-            </button>
-            <button type="button" onClick={() => openFollowModal("following")} className="glass-button rounded-2xl py-1 transition hover:opacity-100">
+            </motion.button>
+            <motion.button
+              type="button"
+              onClick={() => openFollowModal("following")}
+              className="glass-button rounded-2xl py-1 transition hover:opacity-100"
+              {...buttonMotionProps}
+            >
               <AnimatedCounter value={localFollowingCount} className="text-[20px] font-semibold text-white" />
               <p className="text-sm text-white/45">following</p>
-            </button>
+            </motion.button>
           </div>
         </div>
       </motion.div>
