@@ -55,6 +55,7 @@ const revealVariants = {
 interface ProfileHeaderProps {
   profile: Profile;
   isOwnProfile: boolean;
+  scrollY?: number;
   onMessageClick?: () => void;
   onCallClick?: (type: "voice" | "video") => void;
   onProfileUpdated?: (profile: Profile) => void;
@@ -84,20 +85,39 @@ function ProfileAvatar({
   name,
   hasStories,
   isOwnProfile,
-  uploadingAvatar,
   onOpenStories,
-  onAvatarClick,
+  scrollY = 0,
 }: {
   profile: Profile;
   name: string;
   hasStories: boolean;
   isOwnProfile: boolean;
-  uploadingAvatar: boolean;
   onOpenStories: () => void;
-  onAvatarClick: () => void;
+  scrollY?: number;
 }) {
+  const avatarScale = Math.max(0.92, 1 - Math.min(scrollY, 180) / 2200);
+  const avatarLift = Math.min(scrollY * 0.08, 14);
+  const avatarClasses = cn(
+    "relative h-full w-full overflow-hidden rounded-full border-[5px] border-[#030307] bg-gradient-to-br from-[#8aa3ff] via-[#6b67ff] to-[#d64cff] text-4xl font-bold text-white shadow-[0_28px_60px_rgba(91,74,255,0.36)]",
+    hasStories && "cursor-pointer"
+  );
+  const avatarContent = profile.avatar_url ? (
+    <Image src={profile.avatar_url} alt={name} fill className="object-cover" sizes="144px" />
+  ) : (
+    <span className="flex h-full w-full items-center justify-center">
+      {name.slice(0, 1).toUpperCase()}
+    </span>
+  );
+
   return (
-    <div className="relative mx-auto h-28 w-28 sm:h-32 sm:w-32">
+    <motion.div
+      className="relative mx-auto h-28 w-28 sm:h-32 sm:w-32"
+      animate={{
+        y: -avatarLift,
+        scale: avatarScale,
+      }}
+      transition={{ type: "spring", stiffness: 180, damping: 24, mass: 0.72 }}
+    >
       <motion.div
         className="absolute -inset-1 rounded-full"
         style={{
@@ -108,44 +128,32 @@ function ProfileAvatar({
         animate={hasStories ? { rotate: 360 } : {}}
         transition={hasStories ? { duration: 4, repeat: Infinity, ease: "linear" } : {}}
       />
-      <button
-        type="button"
-        onClick={hasStories ? onOpenStories : undefined}
-        className={cn(
-          "relative h-full w-full overflow-hidden rounded-full border-[5px] border-[#030307] bg-gradient-to-br from-[#8aa3ff] via-[#6b67ff] to-[#d64cff] text-4xl font-bold text-white shadow-[0_28px_60px_rgba(91,74,255,0.36)]",
-          hasStories && "cursor-pointer"
-        )}
-        aria-label={hasStories ? "Открыть истории" : undefined}
-      >
-        {profile.avatar_url ? (
-          <Image src={profile.avatar_url} alt={name} fill className="object-cover" sizes="144px" />
-        ) : (
-          <span className="flex h-full w-full items-center justify-center">
-            {name.slice(0, 1).toUpperCase()}
-          </span>
-        )}
-      </button>
-
-      {isOwnProfile ? (
-        <button
+      {hasStories ? (
+        <motion.button
           type="button"
-          onClick={onAvatarClick}
-          disabled={uploadingAvatar}
-          className="glass-button glass-icon-button absolute bottom-1 right-1 z-10 flex h-10 w-10 items-center justify-center rounded-full text-white"
-          aria-label="Сменить аватар"
+          onClick={onOpenStories}
+          className={avatarClasses}
+          aria-label="Открыть истории"
+          whileTap={{ scale: 0.985 }}
+          transition={{ type: "spring", stiffness: 260, damping: 22 }}
         >
-          {uploadingAvatar ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
-        </button>
+          {avatarContent}
+        </motion.button>
       ) : (
+        <div className={avatarClasses}>{avatarContent}</div>
+      )}
+
+      {isOwnProfile ? null : (
         <OnlineIndicator isOnline={profile.is_online} size="lg" className="z-10 ring-[#030307]" />
       )}
-    </div>
+    </motion.div>
   );
 }
 
 export function ProfileHeader({
   profile,
   isOwnProfile,
+  scrollY = 0,
   onMessageClick,
   onCallClick,
   onProfileUpdated,
@@ -178,6 +186,8 @@ export function ProfileHeader({
   const name = profile.display_name ?? profile.username;
   const birthday = formatBirthday(profile.date_of_birth);
   const statusLabel = profile.is_online || isOwnProfile ? "online" : "last seen recently";
+  const heroLift = Math.min(scrollY * 0.09, 18);
+  const heroOpacity = Math.max(0.58, 1 - scrollY / 520);
 
   useEffect(() => {
     setDisplayName(profile.display_name ?? "");
@@ -435,23 +445,27 @@ export function ProfileHeader({
         animate="visible"
         className="relative z-10 mx-auto mt-3 max-w-2xl text-center"
       >
-        <ProfileAvatar
-          profile={profile}
-          name={name}
-          hasStories={hasStories}
-          isOwnProfile={isOwnProfile}
-          uploadingAvatar={uploadingAvatar}
-          onOpenStories={openStories}
-          onAvatarClick={() => avatarInputRef.current?.click()}
-        />
+        <motion.div
+          animate={{ y: -heroLift, opacity: heroOpacity }}
+          transition={{ type: "spring", stiffness: 180, damping: 26, mass: 0.8 }}
+        >
+          <ProfileAvatar
+            profile={profile}
+            name={name}
+            hasStories={hasStories}
+            isOwnProfile={isOwnProfile}
+            onOpenStories={openStories}
+            scrollY={scrollY}
+          />
 
-        <h1 className="mt-4 text-[29px] font-semibold leading-tight tracking-[0.01em] text-white sm:text-[34px]">
-          {name}
-        </h1>
-        <div className="mt-1 flex items-center justify-center gap-2 text-[18px] text-white/58">
-          {isOwnProfile ? <span className="rounded-md bg-[#d95cff]/80 px-1.5 text-sm font-bold text-white">1</span> : null}
-          <span>{statusLabel}</span>
-        </div>
+          <h1 className="mt-4 text-[29px] font-semibold leading-tight tracking-[0.01em] text-white sm:text-[34px]">
+            {name}
+          </h1>
+          <div className="mt-1 flex items-center justify-center gap-2 text-[18px] text-white/58">
+            {isOwnProfile ? <span className="rounded-md bg-[#d95cff]/80 px-1.5 text-sm font-bold text-white">1</span> : null}
+            <span>{statusLabel}</span>
+          </div>
+        </motion.div>
       </motion.div>
 
       {!isOwnProfile && (
@@ -600,6 +614,26 @@ export function ProfileHeader({
             <DialogDescription className="text-white/50">Обновите информацию о профиле</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={uploadingAvatar}
+                className="glass-button inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-white/[0.07] text-sm font-medium text-white disabled:opacity-50"
+              >
+                {uploadingAvatar ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                Avatar
+              </button>
+              <button
+                type="button"
+                onClick={() => coverInputRef.current?.click()}
+                disabled={uploadingCover}
+                className="glass-button inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-white/[0.07] text-sm font-medium text-white disabled:opacity-50"
+              >
+                {uploadingCover ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                Cover
+              </button>
+            </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-white/50">Имя</label>
               <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="h-11 rounded-2xl border-white/10 bg-white/[0.07] text-white" />

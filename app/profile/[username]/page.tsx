@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useEffect, useState, use } from "react";
+import React, { useEffect, useRef, useState, use } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { useMessages } from "@/hooks/useMessages";
@@ -62,6 +64,8 @@ export default function ProfilePage({ params }: ProfilePageProps) {
   const [posts, setPosts] = useState<Post[]>(profileCache?.posts ?? []);
   const [loadingProfile, setLoadingProfile] = useState(!profileCache);
   const [loadingPosts, setLoadingPosts] = useState(false);
+  const [scrollTop, setScrollTop] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -249,14 +253,52 @@ export default function ProfilePage({ params }: ProfilePageProps) {
   }
 
   const isOwn = user?.id === profile.id;
+  const showCompactHeader = scrollTop > 88;
+  const profileName = profile.display_name ?? profile.username;
+  const profileStatus = profile.is_online || isOwn ? "online" : "last seen recently";
 
   return (
     <PageTransition className="fixed inset-0 overflow-hidden bg-[#030307] text-white">
-      <div data-profile-scrollable="true" className="route-scroll-shell h-full overflow-y-auto">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 px-4 pt-[calc(env(safe-area-inset-top,0px)+0.35rem)]">
+        <motion.div
+          initial={false}
+          animate={{
+            opacity: showCompactHeader ? 1 : 0,
+            y: showCompactHeader ? 0 : -18,
+            scale: showCompactHeader ? 1 : 0.96,
+          }}
+          transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+          className="pointer-events-auto mx-auto max-w-fit"
+        >
+          <div className="glass-panel flex items-center gap-3 rounded-full px-3 py-2 shadow-[0_18px_42px_rgba(0,0,0,0.36)]">
+            <div className="relative h-10 w-10 overflow-hidden rounded-full bg-gradient-to-br from-[#8aa3ff] via-[#6b67ff] to-[#d64cff]">
+              {profile.avatar_url ? (
+                <Image src={profile.avatar_url} alt={profileName} fill className="object-cover" sizes="40px" />
+              ) : (
+                <span className="flex h-full w-full items-center justify-center text-sm font-semibold text-white">
+                  {profileName.slice(0, 1).toUpperCase()}
+                </span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-white">{profileName}</p>
+              <p className="truncate text-xs text-white/52">{profileStatus}</p>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+
+      <div
+        ref={scrollRef}
+        data-profile-scrollable="true"
+        className="route-scroll-shell h-full overflow-y-auto overscroll-y-none"
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      >
         <div className="mx-auto max-w-2xl pb-10">
           <ProfileHeader
             profile={profile}
             isOwnProfile={isOwn}
+            scrollY={scrollTop}
             onMessageClick={handleMessageClick}
             onCallClick={handleCallClick}
             onProfileUpdated={(nextProfile) => {
