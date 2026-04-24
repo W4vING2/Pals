@@ -272,7 +272,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         exit={{ opacity: 0, y: 16, scale: 0.92 }}
                         transition={{ duration: 0.18 }}
                         onClick={() => setCreateStoryOpen(true)}
-                        className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-[var(--bg-surface)]/95 px-4 py-3 text-sm font-medium text-[var(--text-primary)] shadow-2xl backdrop-blur-xl"
+                        className="glass-button glass-panel group flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-[var(--text-primary)]"
                       >
                         <span className="text-[var(--text-secondary)] transition-colors group-hover:text-[var(--text-primary)]">
                           История
@@ -287,7 +287,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         exit={{ opacity: 0, y: 16, scale: 0.92 }}
                         transition={{ duration: 0.2, delay: 0.03 }}
                         onClick={() => setCreatePostOpen(true)}
-                        className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-[var(--bg-surface)]/95 px-4 py-3 text-sm font-medium text-[var(--text-primary)] shadow-2xl backdrop-blur-xl"
+                        className="glass-button glass-panel group flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium text-[var(--text-primary)]"
                       >
                         <span className="text-[var(--text-secondary)] transition-colors group-hover:text-[var(--text-primary)]">
                           Пост

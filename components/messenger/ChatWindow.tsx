@@ -444,7 +444,7 @@ export function ChatWindow({
             {onBack ? (
               <button
                 onClick={() => { haptic("light"); onBack(); }}
-                className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.09] text-white shadow-[0_16px_34px_rgba(0,0,0,0.34)] backdrop-blur-2xl transition active:scale-95 lg:hidden"
+                className="glass-button glass-icon-button flex h-12 w-12 items-center justify-center rounded-full text-white lg:hidden"
                 aria-label="Назад"
               >
                 <ArrowLeft className="h-6 w-6" />
@@ -457,7 +457,7 @@ export function ChatWindow({
               type="button"
               onClick={handleHeaderClick}
               className={cn(
-                "mx-auto flex h-14 min-w-0 max-w-full items-center justify-center rounded-[1.65rem] border border-white/10 bg-[#17171d]/78 px-5 text-center shadow-[0_18px_42px_rgba(0,0,0,0.38)] backdrop-blur-2xl transition",
+                "glass-button glass-panel mx-auto flex h-14 min-w-0 max-w-full items-center justify-center rounded-[1.65rem] px-5 text-center",
                 !isGroup && otherProfile?.username && "hover:bg-white/[0.12] active:scale-[0.985]"
               )}
             >
@@ -481,7 +481,7 @@ export function ChatWindow({
                 {!isGroup && <OnlineIndicator isOnline={isOtherOnline} size="sm" />}
               </div>
 
-              <div className="hidden items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.07] p-1.5 backdrop-blur-2xl sm:flex">
+              <div className="glass-pill hidden items-center gap-1.5 rounded-full p-1.5 sm:flex">
                 <button
                   onClick={() => { setSearchOpen((p) => !p); if (!searchOpen) setSearchQuery(""); }}
                   className={cn("flex h-9 w-9 items-center justify-center rounded-full transition", searchOpen ? "bg-white/18 text-[#ef7cff]" : "text-white/72 hover:bg-white/12 hover:text-white")}
@@ -819,7 +819,7 @@ export function ChatWindow({
                   }
                 }}
                 disabled={uploading}
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#17171d]/88 text-white/80 shadow-[0_12px_24px_rgba(0,0,0,0.3)] backdrop-blur-2xl transition hover:text-white active:scale-95"
+                className="glass-button glass-icon-button flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-white/80 hover:text-white"
               >
                 <Paperclip className="w-5 h-5" />
               </button>
@@ -840,7 +840,7 @@ export function ChatWindow({
               {/* Mic */}
               <button
                 onClick={() => setVoiceMode(true)}
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#17171d]/88 text-white/80 shadow-[0_12px_24px_rgba(0,0,0,0.3)] backdrop-blur-2xl transition hover:text-white active:scale-95"
+                className="glass-button glass-icon-button flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-white/80 hover:text-white"
               >
                 <Mic className="w-5 h-5" />
               </button>
@@ -852,8 +852,8 @@ export function ChatWindow({
                 animate={justSent ? { rotate: [0, -15, 15, 0], scale: [1, 1.15, 1] } : { rotate: 0, scale: 1 }}
                 transition={{ duration: 0.3 }}
                 className={cn(
-                  "flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-[0_12px_28px_rgba(0,0,0,0.34)] transition-all duration-150",
-                  text.trim() ? "bg-gradient-to-br from-[#f05dff] to-[#747dff] text-white" : "border border-white/10 bg-[#17171d]/88 text-white/50 backdrop-blur-2xl"
+                  "glass-button flex h-12 w-12 shrink-0 items-center justify-center rounded-full shadow-[0_12px_28px_rgba(0,0,0,0.34)]",
+                  text.trim() ? "bg-gradient-to-br from-[#f05dff] to-[#747dff] text-white" : "glass-icon-button text-white/50"
                 )}
               >
                 <SendHorizontal className="h-5 w-5" />

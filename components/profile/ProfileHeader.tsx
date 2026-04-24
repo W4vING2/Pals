@@ -38,6 +38,20 @@ import {
 } from "lucide-react";
 import type { Profile, Story } from "@/lib/supabase";
 
+const revealTransition = {
+  duration: 0.46,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
+
+const revealVariants = {
+  hidden: { opacity: 0, y: 18 },
+  visible: (delay = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { ...revealTransition, delay },
+  }),
+};
+
 interface ProfileHeaderProps {
   profile: Profile;
   isOwnProfile: boolean;
@@ -117,7 +131,7 @@ function ProfileAvatar({
           type="button"
           onClick={onAvatarClick}
           disabled={uploadingAvatar}
-          className="absolute bottom-1 right-1 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-[#1b1b22]/88 text-white shadow-2xl backdrop-blur-2xl transition active:scale-95"
+          className="glass-button glass-icon-button absolute bottom-1 right-1 z-10 flex h-10 w-10 items-center justify-center rounded-full text-white"
           aria-label="Сменить аватар"
         >
           {uploadingAvatar ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
@@ -358,28 +372,50 @@ export function ProfileHeader({
         {profile.cover_url ? (
           <Image src={profile.cover_url} alt="" fill className="object-cover opacity-20 blur-xl scale-110" sizes="100vw" />
         ) : null}
+        <motion.div
+          className="absolute -left-14 top-16 h-44 w-44 rounded-full bg-[#7a67ff]/16 blur-3xl"
+          animate={{ y: [0, -10, 0], scale: [1, 1.04, 1] }}
+          transition={{ duration: 7.2, repeat: Infinity, ease: "easeInOut" }}
+        />
+        <motion.div
+          className="absolute right-[-2.5rem] top-1/3 h-52 w-52 rounded-full bg-[#ea62ff]/12 blur-3xl"
+          animate={{ y: [0, 12, 0], scale: [1.02, 0.98, 1.02] }}
+          transition={{ duration: 8.6, repeat: Infinity, ease: "easeInOut" }}
+        />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(107,103,255,0.20),transparent_34%),linear-gradient(180deg,rgba(0,0,0,0.10),#030307_72%)]" />
       </div>
 
-      <div className="relative z-10 mx-auto flex max-w-2xl items-center justify-between">
+      <motion.div
+        custom={0}
+        variants={revealVariants}
+        initial="hidden"
+        animate="visible"
+        className="relative z-10 mx-auto flex max-w-2xl items-center justify-between"
+      >
         <button
           type="button"
           onClick={() => router.back()}
-          className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.09] text-white shadow-[0_16px_34px_rgba(0,0,0,0.34)] backdrop-blur-2xl transition active:scale-95"
+          className="glass-button glass-icon-button flex h-12 w-12 items-center justify-center rounded-full text-white"
           aria-label="Назад"
         >
           <ArrowLeft className="h-6 w-6" />
         </button>
 
         {isOwnProfile ? (
-          <div className="flex items-center rounded-full border border-white/10 bg-white/[0.08] p-1.5 shadow-[0_16px_34px_rgba(0,0,0,0.34)] backdrop-blur-2xl">
-            <button type="button" onClick={() => coverInputRef.current?.click()} disabled={uploadingCover} className="flex h-10 w-10 items-center justify-center rounded-full text-white/80 transition hover:bg-white/10 hover:text-white" aria-label="Сменить обложку">
+          <div className="glass-pill flex items-center rounded-full p-1.5">
+            <button
+              type="button"
+              onClick={() => coverInputRef.current?.click()}
+              disabled={uploadingCover}
+              className="glass-button flex h-10 w-10 items-center justify-center rounded-full text-white/80 hover:text-white"
+              aria-label="Сменить обложку"
+            >
               {uploadingCover ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
             </button>
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="rounded-full px-4 py-2 text-[17px] font-semibold text-white transition hover:bg-white/10"
+              className="glass-button rounded-full px-4 py-2 text-[17px] font-semibold text-white"
             >
               Edit
             </button>
@@ -387,12 +423,18 @@ export function ProfileHeader({
         ) : (
           <div className="h-12 w-12" aria-hidden="true" />
         )}
-      </div>
+      </motion.div>
 
       <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
       <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
 
-      <div className="relative z-10 mx-auto mt-3 max-w-2xl text-center">
+      <motion.div
+        custom={0.08}
+        variants={revealVariants}
+        initial="hidden"
+        animate="visible"
+        className="relative z-10 mx-auto mt-3 max-w-2xl text-center"
+      >
         <ProfileAvatar
           profile={profile}
           name={name}
@@ -410,15 +452,21 @@ export function ProfileHeader({
           {isOwnProfile ? <span className="rounded-md bg-[#d95cff]/80 px-1.5 text-sm font-bold text-white">1</span> : null}
           <span>{statusLabel}</span>
         </div>
-      </div>
+      </motion.div>
 
       {!isOwnProfile && (
-        <div className="relative z-10 mx-auto mt-6 grid max-w-2xl grid-cols-3 gap-2.5 sm:grid-cols-6">
+        <motion.div
+          custom={0.14}
+          variants={revealVariants}
+          initial="hidden"
+          animate="visible"
+          className="relative z-10 mx-auto mt-6 grid max-w-2xl grid-cols-3 gap-2.5 sm:grid-cols-6"
+        >
           <button
             type="button"
             onClick={onMessageClick}
             disabled={blocked}
-            className="flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95 disabled:opacity-45"
+            className="glass-button glass-action-card flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] text-[#f06dff] disabled:opacity-45"
           >
             <MessageCircle className="h-5 w-5" />
             <span className="text-xs">message</span>
@@ -427,7 +475,7 @@ export function ProfileHeader({
             type="button"
             onClick={toggleFollow}
             disabled={followPending || blocked}
-            className="flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95 disabled:opacity-45"
+            className="glass-button glass-action-card flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] text-[#f06dff] disabled:opacity-45"
           >
             {followPending ? <Loader2 className="h-5 w-5 animate-spin" /> : following ? <UserCheck className="h-5 w-5" /> : <UserPlus className="h-5 w-5" />}
             <span className="text-xs">{following ? "following" : "follow"}</span>
@@ -435,7 +483,7 @@ export function ProfileHeader({
           <button
             type="button"
             onClick={scrollToPosts}
-            className="flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95"
+            className="glass-button glass-action-card flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] text-[#f06dff]"
           >
             <Search className="h-5 w-5" />
             <span className="text-xs">posts</span>
@@ -443,7 +491,7 @@ export function ProfileHeader({
           <button
             type="button"
             onClick={handleBlockToggle}
-            className="flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] bg-black/18 text-[#ff6d91] backdrop-blur-xl transition active:scale-95"
+            className="glass-button glass-action-card flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] text-[#ff6d91]"
           >
             <Ban className="h-5 w-5" />
             <span className="text-xs">{blocked ? "unblock" : "block"}</span>
@@ -452,7 +500,7 @@ export function ProfileHeader({
             type="button"
             onClick={() => onCallClick?.("voice")}
             disabled={blocked}
-            className="flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95 disabled:opacity-45"
+            className="glass-button glass-action-card flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] text-[#f06dff] disabled:opacity-45"
           >
             <Phone className="h-5 w-5" />
             <span className="text-xs">audio</span>
@@ -461,15 +509,21 @@ export function ProfileHeader({
             type="button"
             onClick={() => onCallClick?.("video")}
             disabled={blocked}
-            className="flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] bg-black/18 text-[#f06dff] backdrop-blur-xl transition active:scale-95 disabled:opacity-45"
+            className="glass-button glass-action-card flex h-16 flex-col items-center justify-center gap-1 rounded-[1.25rem] text-[#f06dff] disabled:opacity-45"
           >
             <Video className="h-5 w-5" />
             <span className="text-xs">video</span>
           </button>
-        </div>
+        </motion.div>
       )}
 
-      <div className="relative z-10 mx-auto mt-6 max-w-2xl overflow-hidden rounded-[1.65rem] bg-[#1b1b1f] px-4 py-3 text-left shadow-[0_24px_64px_rgba(0,0,0,0.36)]">
+      <motion.div
+        custom={0.2}
+        variants={revealVariants}
+        initial="hidden"
+        animate="visible"
+        className="glass-panel animate-float-drift relative z-10 mx-auto mt-6 max-w-2xl rounded-[1.65rem] px-4 py-3 text-left"
+      >
         <div className="space-y-3 divide-y divide-white/8">
           <div className="pb-3">
             <p className="text-[16px] leading-tight text-white">username</p>
@@ -521,17 +575,17 @@ export function ProfileHeader({
               <AnimatedCounter value={profile.posts_count ?? 0} className="text-[20px] font-semibold text-white" />
               <p className="text-sm text-white/45">posts</p>
             </div>
-            <button type="button" onClick={() => openFollowModal("followers")} className="transition hover:opacity-75">
+            <button type="button" onClick={() => openFollowModal("followers")} className="glass-button rounded-2xl py-1 transition hover:opacity-100">
               <AnimatedCounter value={localFollowersCount} className="text-[20px] font-semibold text-white" />
               <p className="text-sm text-white/45">followers</p>
             </button>
-            <button type="button" onClick={() => openFollowModal("following")} className="transition hover:opacity-75">
+            <button type="button" onClick={() => openFollowModal("following")} className="glass-button rounded-2xl py-1 transition hover:opacity-100">
               <AnimatedCounter value={localFollowingCount} className="text-[20px] font-semibold text-white" />
               <p className="text-sm text-white/45">following</p>
             </button>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {blocked && !isOwnProfile ? (
         <div className="relative z-10 mx-auto mt-4 max-w-2xl rounded-2xl border border-red-400/15 bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -571,8 +625,8 @@ export function ProfileHeader({
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setEditing(false)} className="rounded-2xl px-4 py-2 text-sm text-white/60 transition hover:bg-white/10">Отмена</button>
-              <button type="button" disabled={saving} onClick={saveProfile} className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#738cff] to-[#ed62ff] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+              <button type="button" onClick={() => setEditing(false)} className="glass-button rounded-2xl px-4 py-2 text-sm text-white/60 hover:bg-white/10">Отмена</button>
+              <button type="button" disabled={saving} onClick={saveProfile} className="glass-button inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#738cff] to-[#ed62ff] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 Сохранить
               </button>

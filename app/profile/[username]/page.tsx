@@ -75,6 +75,59 @@ export default function ProfilePage({ params }: ProfilePageProps) {
   }, [setMobileNavHidden]);
 
   useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const scrollY = window.scrollY;
+    const previousHtmlOverflow = html.style.overflow;
+    const previousBodyOverflow = body.style.overflow;
+    const previousBodyPosition = body.style.position;
+    const previousBodyTop = body.style.top;
+    const previousBodyLeft = body.style.left;
+    const previousBodyRight = body.style.right;
+    const previousBodyWidth = body.style.width;
+    const previousHtmlHeight = html.style.height;
+    const previousBodyHeight = body.style.height;
+    const previousHtmlOverscroll = html.style.overscrollBehaviorY;
+    const previousBodyOverscroll = body.style.overscrollBehaviorY;
+
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.width = "100%";
+    html.style.height = "100%";
+    body.style.height = "100dvh";
+    html.style.overscrollBehaviorY = "none";
+    body.style.overscrollBehaviorY = "none";
+
+    const stopOuterTouchScroll = (event: TouchEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest("[data-profile-scrollable='true']")) return;
+      event.preventDefault();
+    };
+
+    document.addEventListener("touchmove", stopOuterTouchScroll, { passive: false });
+
+    return () => {
+      document.removeEventListener("touchmove", stopOuterTouchScroll);
+      html.style.overflow = previousHtmlOverflow;
+      body.style.overflow = previousBodyOverflow;
+      body.style.position = previousBodyPosition;
+      body.style.top = previousBodyTop;
+      body.style.left = previousBodyLeft;
+      body.style.right = previousBodyRight;
+      body.style.width = previousBodyWidth;
+      html.style.height = previousHtmlHeight;
+      body.style.height = previousBodyHeight;
+      html.style.overscrollBehaviorY = previousHtmlOverscroll;
+      body.style.overscrollBehaviorY = previousBodyOverscroll;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!username) return;
     const load = async () => {
       const cacheKey = `profile:${username}`;
@@ -172,21 +225,25 @@ export default function ProfilePage({ params }: ProfilePageProps) {
 
   if (authLoading || loadingProfile) {
     return (
-      <div className="min-h-dvh bg-[#030307] text-white">
-        <ProfileSkeleton />
+      <div className="fixed inset-0 overflow-hidden bg-[#030307] text-white">
+        <div data-profile-scrollable="true" className="route-scroll-shell h-full overflow-y-auto">
+          <ProfileSkeleton />
+        </div>
       </div>
     );
   }
 
   if (!profile) {
     return (
-      <div className="flex min-h-dvh flex-col items-center justify-center bg-[#030307] px-4 text-center text-white">
-        <p className="mb-2 text-2xl font-bold">
-          Пользователь не найден
-        </p>
-        <p className="text-white/45">
-          @{username} не существует
-        </p>
+      <div className="fixed inset-0 overflow-hidden bg-[#030307] px-4 text-center text-white">
+        <div data-profile-scrollable="true" className="route-scroll-shell flex h-full flex-col items-center justify-center overflow-y-auto">
+          <p className="mb-2 text-2xl font-bold">
+            Пользователь не найден
+          </p>
+          <p className="text-white/45">
+            @{username} не существует
+          </p>
+        </div>
       </div>
     );
   }
@@ -194,30 +251,32 @@ export default function ProfilePage({ params }: ProfilePageProps) {
   const isOwn = user?.id === profile.id;
 
   return (
-    <PageTransition className="min-h-dvh bg-[#030307] text-white">
-      <div className="mx-auto max-w-2xl pb-10">
-        <ProfileHeader
-          profile={profile}
-          isOwnProfile={isOwn}
-          onMessageClick={handleMessageClick}
-          onCallClick={handleCallClick}
-          onProfileUpdated={(nextProfile) => {
-            setProfile(nextProfile);
-            setProfileCache(username, {
-              profile: nextProfile,
-              posts,
-              loadedAt: Date.now(),
-            });
-          }}
-        />
+    <PageTransition className="fixed inset-0 overflow-hidden bg-[#030307] text-white">
+      <div data-profile-scrollable="true" className="route-scroll-shell h-full overflow-y-auto">
+        <div className="mx-auto max-w-2xl pb-10">
+          <ProfileHeader
+            profile={profile}
+            isOwnProfile={isOwn}
+            onMessageClick={handleMessageClick}
+            onCallClick={handleCallClick}
+            onProfileUpdated={(nextProfile) => {
+              setProfile(nextProfile);
+              setProfileCache(username, {
+                profile: nextProfile,
+                posts,
+                loadedAt: Date.now(),
+              });
+            }}
+          />
 
-        <div id="profile-posts" className="px-4 pt-4">
-          <div className="mx-auto mb-7 flex w-fit rounded-full border border-white/10 bg-[#1b1b1f] p-1 shadow-[0_20px_48px_rgba(0,0,0,0.34)]">
-            <button className="inline-flex items-center gap-2 rounded-full bg-white/10 px-6 py-2.5 text-[18px] font-semibold text-white">
-              Posts
-            </button>
+          <div id="profile-posts" className="px-4 pt-4">
+            <div className="glass-panel mx-auto mb-7 flex w-fit rounded-full p-1 shadow-[0_20px_48px_rgba(0,0,0,0.34)] animate-slide-up">
+              <button className="glass-button inline-flex items-center gap-2 rounded-full bg-white/10 px-6 py-2.5 text-[18px] font-semibold text-white">
+                Posts
+              </button>
+            </div>
+            <PostGrid posts={posts} loading={loadingPosts} />
           </div>
-          <PostGrid posts={posts} loading={loadingPosts} />
         </div>
       </div>
     </PageTransition>
